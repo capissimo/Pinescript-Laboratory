@@ -1,0 +1,53 @@
+//@version=4
+study("1 Pair TF Strength", '', false, max_bars_back=100)
+
+// Inspired by https://www.tradingview.com/script/Cc3m43Xd-8-Pair-Strength-R2-0-updated-by-JustUncleL/
+// and https://www.tradingview.com/script/gxwk2WDI-8-Pair-Strength-updated-by-rmireland-for-CHF-EUR-GBP/
+// To be used with SuperTrend by  Alex Orekhov (everget)
+
+sec    = input("EURUSD", "Security", options=["EURUSD","GBPUSD","USDJPY","BTCUSD","ETHUSD","USDCAD"])
+price  = input(close, "Price Data")
+fast   = input(2,     "Fast Lookback (8)",  minval=1, maxval=50)
+slow   = input(60,    "Slow Lookback (24)", minval=2, maxval=100) 
+uWghts = input(true,  "Use ATR weighted Averages in Strength Calculation")
+
+eurusd01 = security(sec,  "1", price, lookahead=false)
+eurusd03 = security(sec,  "3", price, lookahead=false)
+eurusd05 = security(sec,  "5", price, lookahead=false)
+eurusd15 = security(sec, "15", price, lookahead=false)
+eurusd30 = security(sec, "30", price, lookahead=false)
+eurusd45 = security(sec, "45", price, lookahead=false)
+eurusd60 = security(sec, "60", price, lookahead=false)
+//eurusd20 = security(sec, "120", price, lookahead=false)
+//eurusd80 = security(sec, "180", price, lookahead=false)
+//eurusd40 = security(sec, "240", price, lookahead=false)
+//eurusd14 = security(sec, "1440", price, lookahead=false)
+
+// Estimate Currency Strength based on the Average Influence Rates; Scaling factor
+sf   = uWghts ? 14.29 : 0.1429
+//Calculate Currency strength ATR weighted (default) or no weighting.
+EUR  = uWghts ? (eurusd01/80 + eurusd03/75 + eurusd05/125 + eurusd15/105 + eurusd30/120 + eurusd45/50 + eurusd60/135)*sf : 
+       (eurusd01 + eurusd03 + eurusd05 + eurusd15 + eurusd30 + eurusd45 + eurusd60)*sf
+eur  = tsi(EUR, fast, slow)
+UP   = eur > eur[1]
+DN   = eur < eur[1]
+MOVE = eur > eur[1] ? eur - eur[1] : eur[1] > eur ? eur[1] - eur : na
+
+green00 = color.new(color.teal,0),  red00 = color.new(color.maroon,0)
+green20 = color.new(color.teal,20), red20 = color.new(color.maroon,20)
+green40 = color.new(color.teal,40), red40 = color.new(color.maroon,40)
+green60 = color.new(color.teal,60), red60 = color.new(color.maroon,60)
+green80 = color.new(color.teal,80), red80 = color.new(color.maroon,80)
+
+EURUSD_color = UP and MOVE>0.15 ? green00 : 
+               UP and MOVE>0.1 ? green20 : 
+               UP and MOVE>0.05 ? green40 : 
+               UP and MOVE>0.00 ? green60 : 
+               DN and MOVE>0.15 ? red00 : 
+               DN and MOVE>0.1 ? red20 : 
+               DN and MOVE>0.05 ? red40 : 
+               DN and MOVE>0.00 ? red60 : 
+               DN ? red80 : UP ? green80 : 
+               na 
+
+plotshape(na(EURUSD_color)?na: 0, color=EURUSD_color, style=shape.square, size=size.normal, location=location.absolute)

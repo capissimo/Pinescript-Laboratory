@@ -1,0 +1,55 @@
+//@version=4
+study("Forecast Oscillator & Point of Force", overlay=false)
+// author: capissimo
+
+// This is a scaled version of the Forecast Oscillator (by everget), paired with a Point of Force Indicator, 
+// my mod of an indicator, whose original name and developer happened to be missing on my notes, 
+// so my regards to the author).
+// PoF is a spot from where price action will dynamically evolve in the same direction or soon reverse and pursue that reversed path. 
+// It may be an indication of a turning point or entry point to consider going long/short and should be use together with
+// a background oscillator showing a prevailing local trend.
+
+//*** Functions
+scaler(x, p) => (x - lowest(x, p)) / (highest(x, p) - lowest(x, p))
+
+changed(v) => v != v[1]
+
+//*** Inputs
+p  = input(55, "Lookback Window", minval=1)
+tf = input(1,  "Time Frame for Point of Force", options=[1,2,3,4,5,6,7,8,9,10,13,15,16,20,21,22,30,34,45,55,60])
+
+//*** Main
+O = open, H = high, L = low, C = close
+
+// Forecast Oscillator
+fosc = 100 * (C - linreg(C, p, 0)) / C  
+
+c = fosc >= 0.0 ? color.lime : color.red
+hline(.5, title="Mid Level", linestyle=hline.style_dotted, color=color.gray)
+plot(scaler(fosc, 55), title="FOSC", linewidth=2, color=c, transp=0)
+
+// Point of Force
+h0 = security(syminfo.tickerid, tostring(tf), H[0])
+h1 = security(syminfo.tickerid, tostring(tf), H[1])
+h2 = security(syminfo.tickerid, tostring(tf), H[2])
+h3 = security(syminfo.tickerid, tostring(tf), H[3])
+h4 = security(syminfo.tickerid, tostring(tf), H[4])
+h5 = security(syminfo.tickerid, tostring(tf), H[5])
+h6 = security(syminfo.tickerid, tostring(tf), H[6])
+
+l0 = security(syminfo.tickerid, tostring(tf), L[0])
+l1 = security(syminfo.tickerid, tostring(tf), L[1])
+l2 = security(syminfo.tickerid, tostring(tf), L[2])
+l3 = security(syminfo.tickerid, tostring(tf), L[3])
+l4 = security(syminfo.tickerid, tostring(tf), L[4])
+l5 = security(syminfo.tickerid, tostring(tf), L[5])
+l6 = security(syminfo.tickerid, tostring(tf), L[6])
+
+pivoth = 0., pivoth := h2 > h1 and h2 > h0 and h6 < h2 and h5 < h2 and h4 < h2 and h3 < h2 ? h2 : nz(pivoth[1])
+pivotl = 0., pivotl := l1 < l0 and l2 < l0 and l6 > l2 and l5 > l2 and l4 > l2 and l3 > l2 ? l2 : nz(pivotl[1])
+
+state = 0
+state := H >= pivoth ? -1 : L <= pivotl ? 1 : H >= pivoth and changed(pivoth) ? -1 : L <= pivotl and changed(pivotl) ? 1 : nz(state[1])
+c2 = changed(state) and state[1]==1 ? color.new(color.navy, 10) : changed(state) and state[1]==-1 ? color.new(color.navy, 50) : na
+
+bgcolor(c2, transp=50, title="PoF", transp=0)

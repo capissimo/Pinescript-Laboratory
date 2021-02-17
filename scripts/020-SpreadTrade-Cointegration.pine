@@ -1,0 +1,86 @@
+//@version=3
+study("SpreadTrade - Cointegration", "STCoint", false) 
+
+// Cointegration Based Pair Trading Strategy (Trading the spread)
+// https://analyticsprofile.com/algo-trading/pair-trading-part-2-code-correlation-based-pair-trading-strategy-in-r/
+
+// There are three popular styles of Pair trading:
+//
+// * Distance based pair trading
+// * Correlation based pair trading
+// * Cointegration based pair trading
+//
+// The Cointegration strategy is to short the outperforming instrument and go long on the underperforming instrument 
+// whenever the temporary correlation weakens which means one instrument going up and another going down.
+// Here, instead of two different instruments two timeframes of the same instrument are used, lower and higher. 
+
+//
+// Functions
+//
+rema(X, p) => // regularized ma
+    rm = 0.0, lambda = .5, a = 2 / (p + 1)
+    rm := (nz(rm[1]) + a * (X - nz(rm[1])) + lambda * (2 * nz(rm[1]) - nz(rm[2]))) / (lambda + 1)
+    rm
+
+scaleMinimax(X, p, min, max) => 
+    lo = lowest(X, p), hi = highest(X, p)
+    (max - min) * (X - lo)/(hi - lo) + min
+
+//
+// Inputs
+//
+X  = input(close, title="Data source")
+p1 = input(3, title="Lookback 1")  // 5
+p2 = input(6, title="Lookback 2")  // 10
+atype      = input("WMA", options=["WMA", "SMA"], title="Averaging type")
+customReso = input("03", title="Timeframe", options=["01", "03", "05", "07", "10", "15", "20", "30", "45", "60"])
+use_mid    = input(false, title="Show middle line") 
+
+//
+// Main
+//
+MIN = -1, MAX = 1
+
+Y = security(tickerid, customReso, X[1], barmerge.gaps_off, barmerge.lookahead_on)
+
+ratios = log(X / Y)
+ma1    = atype=="WMA" ? wma(ratios, p1) : sma(ratios, p1) 
+ma2    = atype=="WMA" ? wma(ratios, p2) : sma(ratios, p2) 
+std    = stdev(ma2, p2)
+
+zscore = rema((ma1 - ma2) / std, 1)  // brings out the mean reverting nature of the ratio
+var    = scaleMinimax(variance(zscore, p1), p1, -2.0, 2.0)
+
+// cointegration
+//plot(wma(ratios, 100), color=orange)
+//plot(ratios)
+
+plot(MAX, color=red)
+plot(MIN, color=green)
+plot(use_mid ? (MIN+MAX) / 2 : na, color=silver, transp=70)
+plot(zscore)
+//plot(var, color=black)
+
+// Ratio is buy (1) whenever the z-score is below -1.0 because we expect z score to go back up to 0, hence ratio to increase
+// Ratio is sell(-1) when the z-score is above 1.0 because we expect z score to go back down to 0, hence ratio to decrease
+
+buy = zscore < MIN //and var > 0 and close <= close[1]
+sell = zscore > MAX //and var > 0 and close >= close[1]
+
+plot(sell ? zscore:na, style=circles, color=green, linewidth=3)
+plot(buy ? zscore:na, style=circles, color=red, linewidth=3)
+
+// Simulate trading
+// money = 0.0, countS1 = 0.0, countS2 = 0.0  // Start with no money and no positions
+// if zscore > 1  // Sell short if the z-score is > 1
+//     money := money + X - Y * ratios
+//     countS1 := countS1 - 1
+//     countS2 := countS2 + ratios
+// if zscore < -1  // Buy long if the z-score is < 1
+//     money := money - X - Y * ratios
+//     countS1 := countS1 + 1
+//     countS2 := countS2 - ratios
+// if abs(zscore) < 0.75:  // Clear positions if the z-score between -.5 and .5
+//     money := money + X * countS1 + Y * countS2
+//     countS1 := 0.0
+//     countS2 := 0.0

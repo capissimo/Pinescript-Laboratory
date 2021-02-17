@@ -1,0 +1,86 @@
+//@version=4
+study("PPO Divergence and Aggregate Signal Combo", '', false, precision=2)
+
+// author: capissimo
+
+// This is a further development of the last two posts on aggregated signal generation.
+// It shows how to implement the idea in conjunction with another indicator.
+// In this case general rule for long and short entry: the aggregated curve (gray) must cross the mid-line.
+// Colored columns serve as an early warning. 
+// Settings were tested with EURUSD in 5m, 30m and 1H TFs.
+
+//*** Aggregate Signal Section ***
+//*** Inputs
+i1       = input("Aggregate Signal", "==Indicator #1==", options=["Aggregate Signal"])
+per      = input(22, "Lookback Window",  minval=1) 
+uthres1  = input(70, "Upper Threshold #1", minval=50, maxval=100)
+uthres2  = input(80, "Upper Threshold #2", minval=50, maxval=100)
+lthres1  = input(30, "Lower Threshold #1", minval=0, maxval=50)
+lthres2  = input(20, "Lower Threshold #2", minval=0, maxval=50)
+af       = input(.0, "Column Expansion (Up/Dn)", minval=0., maxval=.5, step=.1)
+show     = input(true,"Show Aggregated Curve?")
+
+//*** Functions
+scaler(x, p) => (x - lowest(x, p)) / (highest(x, p) - lowest(x, p))
+
+aggregate_signals() => 
+    O = open, H = high, L = low, C = close, V = nz(volume, .5) 
+    f1  = scaler(rsi(C, 14), per)                  // RSI
+    f2  = scaler(cci(C, 10), per)                  // CCI
+    f3  = scaler(cog(C, 14), per)                  // COG  
+    f4  = scaler(2 / (1 + pow(2.71828182846, -C/C[1])) - 1, per) // MeanSlope - mean of the absolute value of slopes
+    (f1+f2+f3+f4)/4
+    
+//*** Main
+agg    = aggregate_signals()
+orange = agg > (uthres1/100) and agg < (uthres2/100) 
+red    = agg > (uthres2/100)  
+green  = agg < (lthres1/100) and agg > (lthres2/100) 
+lime   = agg < (lthres2/100) 
+
+plot(orange ? 1-agg+af : na, color=color.new(color.orange, 20), style=plot.style_columns, transp=40)
+plot(red    ? 1-agg+af : na, color=color.new(color.red, 20), style=plot.style_columns, transp=40)
+plot(lime   ? agg+af : na, color=color.new(color.lime, 20), style=plot.style_columns, transp=40)
+plot(green  ? agg+af : na, color=color.new(color.green, 20), style=plot.style_columns, transp=40)
+plot(show   ? linreg(agg+af,3,0) : na, color=color.gray, transp=0)
+
+//*** PPO Divergence Section ***
+//*** Functions
+ppo(x, p) => // Price Percentage Oscillator (PPO)
+    up   = rma(max(change(x), 0), p)
+    down = rma(-min(change(x), 0), p)
+    down==0 ? 1 : up==0 ? 0 : 1 - (1 / (1 + up / down))
+
+stepline(x, y) => (max(x, y) - min(x, y)) + min(x, y)
+
+karo(x, p) => // Karobein Oscillator
+    ma = ema(x, p)
+    a  = ema(ma < ma[1] ? ma/ma[1] : 0, p)
+    b  = ema(ma > ma[1] ? ma/ma[1] : 0, p)
+    c  = (ma/ma[1])/(ma/ma[1] + b)
+    (2*((ma/ma[1])/(ma/ma[1] + c*a)) - 1) 
+    
+//*** Inputs
+i2    = input("PPO Divergence", "==Indicator #2==", options=["PPO Divergence"])
+src   = input(close, "Price Data")
+k     = input(false, "Karobein Enhanced?")
+slow  = input(1440,  "Slow Lookback", options=[1,2,3,5,8,13,15,20,21,30,34,45,55,60,89,120,144,180,233,240,377,610,987,1440]) 
+pma   = input(15,    "MA Lookback",   options=[1,2,3,5,8,13,15,20,21,30,34,45,55,60,89,120,144,180,233,240,377,610,987,1440]) 
+
+//*** Main
+fast   = 5 //timeframe.multiplier<=5 ? 5 : timeframe.multiplier
+factor = k ? karo(src, fast) : stepline(src, src[1])
+price  = scaler(factor, slow)
+pp     = fast <= 5 ? fast * 5 : fast <= 60 ? fast * 5 : fast 
+rs     = 0.1 * (rsi(price, fast))
+
+divergence = scaler(ppo(price, fast) - ppo(price, slow), fast) 
+weighted   = wma(divergence, pma)
+reweighted = ema(weighted, pma)
+rs_scaled  = scaler(rs, pma)
+
+plot(1, color=color.gray), plot(0.5, color=color.gray), plot(0, color=color.gray)
+plot(rs_scaled, linewidth=1, transp=100)
+p1 = plot(weighted, color=divergence > 0.5 ? #2196f3 : #ff1100, linewidth=2, transp=0)
+p2 = plot(reweighted, color=color.silver, linewidth=1, transp=20)
+fill(p1, p2, color=color.silver, transp=60)

@@ -1,0 +1,21 @@
+//@version=4
+study("Forecast Oscillator (ps4)", '', false)
+
+// original : Alex Orekhov (everget), originally developed by Tushar Chande.
+// modification: capissimo
+
+// This is a scaled version of a Forecast Oscillator, which may be used as a standalone indicator or as a filter.
+
+//*** Functions
+scaler(x, p) => (x - lowest(x, p)) / (highest(x, p) - lowest(x, p))
+
+//*** Inputs
+price = input(close, "Price Data")
+p     = input(14,    "Lookback Window", minval=1)
+
+//*** Main
+fosc = 100 * (price - linreg(price, p, 0)) / price
+
+c = fosc >= 0.0 ? color.lime : color.red
+hline(.5, title="Zero Level", linestyle=hline.style_dotted, color=color.gray)
+plot(scaler(fosc, 55), title="FOSC", linewidth=2, color=c, transp=0)

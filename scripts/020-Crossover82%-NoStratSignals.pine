@@ -1,0 +1,39 @@
+//@version=3
+// Price action reversion
+study("Crossover82%-NoStratSignals", '', true)
+
+//
+// Functions
+//
+scaleMinimax(X, p, min, max) => 
+    hi = highest(X, p), lo = lowest(X, p)
+    (max - min) * (X - lo)/(hi - lo) + min
+
+rema(ts, p) => // regularized ma
+    rm = 0.0, lambda = .5, a = 2 / (p + 1)
+    rm := (nz(rm[1]) + a * (ts - nz(rm[1])) + lambda * (2 * nz(rm[1]) - nz(rm[2]))) / (lambda + 1)
+    rm
+    
+//
+// Inputs
+//
+X = input(close, title="Data source")
+smooth = input(2, title="REMA smooth factor")
+show_line = input(true, title="Show signal line")
+
+//
+// Main
+//
+p = 5
+sig = rema(scaleMinimax(pow(X*p,-X) - 0.1, 100, lowest(X, 100), highest(X, 100)), smooth)
+
+plot(show_line ? sig : na, linewidth=1)
+plot(cross(sig, X) ? ohlc4 : na, style=circles, linewidth=8, color=blue, transp=70)
+
+// longCondition = crossover(sig, X)
+// if (longCondition)
+//     strategy.entry("LE", strategy.long)
+
+// shortCondition = crossunder(sig, X)
+// if (shortCondition)
+//     strategy.entry("SE", strategy.short)

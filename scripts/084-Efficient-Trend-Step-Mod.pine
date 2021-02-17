@@ -1,0 +1,38 @@
+//@version=4
+study("Efficient Trend Step Mod", '', true, precision=2)
+
+// original: alexgrover
+// modification: capissimo
+
+// This is my mod of a wonderful script by alexgrover.
+// See his comprehensive description of the logic behind the script 
+// at his page at https://www.tradingview.com/script/HxtiD091-Efficient-Trend-Step-Spotting-Trends-Efficiently/.
+// Added are labels, alerts and selection of periods among (mainly;)) fibo numbers.
+
+//*** Functions
+changed(x) => x!=x[1]
+
+//*** Inputs
+ds     = input(close, "Dataset")
+p      = input(8,    "Lookback Window", options=[1, 2, 3, 5, 8, 13, 15, 21, 34, 55, 89, 144, 233, 377, 610, 987, 1440, 1597])
+fast   = input(3,     "Fast", options=[1, 2, 3, 5, 8, 13, 15, 21, 34, 55, 89, 144, 233, 377, 610, 987, 1440, 1597])
+slow   = input(15,    "Slow", options=[1, 2, 3, 5, 8, 13, 15, 21, 34, 55, 89, 144, 233, 377, 610, 987, 1440, 1597])
+labels = input(true,  "Show Labels?")
+
+//*** Main
+er = abs(change(ds, p)) / sum(abs(change(ds)), p)
+dev = er * stdev(ds * 2, fast) + (1 - er) * stdev(ds * 2, slow)
+a = 0., a := bar_index < 9 ? ds : ds > a[1] + dev ? ds : ds < a[1] - dev ? ds : a[1]
+
+var color c = na, c := fixnan(a > a[1] ? color.lime : a < a[1] ? color.red : na)
+plot(a, color=c, linewidth=3, transp=0)
+
+long = changed(c) and c==color.lime
+short = changed(c) and c==color.red
+
+plotshape(labels and long  ? low : na, location=location.belowbar, style=shape.labelup, color=color.green, size=size.tiny, text="B", textcolor=color.white, transp=0)
+plotshape(labels and short ? high : na, location=location.abovebar, style=shape.labeldown, color=color.red, size=size.tiny, text="S", textcolor=color.white, transp=0)
+
+alertcondition(long,  title='Buy',  message='go long')
+alertcondition(short, title='Sell', message='go short') 
+alertcondition(long or short, title='General Alert', message='Deal Time!')

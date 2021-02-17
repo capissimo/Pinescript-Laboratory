@@ -1,0 +1,109 @@
+//@version=4
+study("Aggregate Signal (ps4) v.2", overlay=false, precision=2)
+// original: LonesomeTheBlue (named 'Indicators Positions'): many thx to the author ;)
+// modified: capissimo
+
+// This is an example of assembling an aggregate signal consisting of several factors.
+// The core of this script is an aggregate_signals function. 
+// It scales the raw price data to an 0..1 interval and then pushes it through 9 factors.
+
+//*** Input
+tper = input(89, "Lookback Window", options=[1, 2, 3, 5, 8, 13, 15, 21, 30, 34, 55, 60, 89, 120, 144, 180, 233, 240, 300, 377, 610, 987, 1440])
+uth1 = input(70, "Upper Threshold #1", minval=50, maxval=100)
+uth2 = input(80, "Upper Threshold #2", minval=50, maxval=100)
+lth1 = input(30, "Lower Threshold #1", minval=0, maxval=50)
+lth2 = input(20, "Lower Threshold #2", minval=0, maxval=50)
+mmx  = input(13, "Scaler Lookback", minval=1)
+
+//*** Functions
+scaler(x) => (x - lowest(x, tper)) / (highest(x, tper) - lowest(x, tper))
+
+scaleMinimax(x, p, min, max) => 
+    hi = highest(x, p), lo = lowest(x, p)
+    (max - min) * (x - lo)/(hi - lo) + min
+
+aggregate_signals() =>
+    state = 0.0
+    O = scaleMinimax(open, mmx, 0, 1)
+    H = scaleMinimax(high, mmx, 0, 1)
+    L = scaleMinimax(low, mmx, 0, 1)
+    C = scaleMinimax(close, mmx, 0, 1)
+    V = scaleMinimax(volume, mmx, 0, 1)
+    
+    macd = (ema(C, 8) - ema(C, 16))    // MACD
+    sig  = ema(macd, 11)
+    aa   = scaler(macd)
+    tt   = na(aa) ? 0 : 1
+    state := state + (na(aa) ? 0 : aa)
+    
+    macdas = macd - sig                // MACD-Asprey
+    aa  := scaler(macdas)
+    tt  := tt + (na(aa) ? 0 : 1)
+    state := state + (na(aa) ? 0 : aa)
+    
+    vrsi = rsi(C, 14)                  // RSI
+    aa  := scaler(vrsi)
+    tt  := tt + (na(aa) ? 0 : 1)
+    state := state + (na(aa) ? 0 : aa)
+    
+    stk  = sma(stoch(C, H, L, 14), 3)  // Stoch
+    aa  := scaler(stk)
+    tt  := tt + (na(aa) ? 0 : 1)
+    state := state + (na(aa) ? 0 : aa)
+    
+    xcci = cci(C, 10)                  // CCI
+    aa  := scaler(xcci)
+    tt  := tt + (na(aa) ? 0 : 1)
+    state := state + (na(aa) ? 0 : aa)
+    
+    momt = mom(C, 10)                   // Momentum
+    aa  := scaler(momt)
+    tt  := tt + (na(aa) ? 0 : 1)
+    state := state + (na(aa) ? 0 : aa)
+    
+    obv  = cum(change(C) > 0 ? V : change(C) < 0 ? -V : 0*V)  // OBV
+    aa  := scaler(obv)
+    tt  := tt + (na(aa) ? 0 : 1)
+    state := state + (na(aa) ? 0 : aa)
+    
+    di = change(H) - (-change(L))       // DI
+    TR = max((H - L), max(abs(H - C[1]), abs(L - C[1])))
+    trur  = rma(TR, 14)
+    diosi = fixnan(100 * rma(di, 14) / trur)
+    aa   := scaler(diosi)
+    tt   := tt + (na(aa) ? 0 : 1)
+    state  := state + (na(aa) ? 0 : aa)
+    
+    maFast = vwma(C, 12)                // Volume weighted MACD
+    maSlow = vwma(C, 26)
+    vwmacd = maFast - maSlow
+    aa  := scaler(vwmacd)
+    tt  := tt + (na(aa) ? 0 : 1)
+    state := state + (na(aa) ? 0 : aa)
+    
+    cmfm  = ((C-L) - (H-C)) / (H - L)   // Cmf
+    cmfv  = cmfm * V
+    cmf21 = sma(cmfv, 21) / sma(V, 21)
+    aa   := scaler(cmf21)
+    tt   := tt + (na(aa) ? 0 : 1)
+    state  := state + (na(aa) ? 0 : aa)
+    
+    na(tt) ? 0 : (state / 9)    
+
+//*** Main
+p        = timeframe.multiplier
+higherTF = p==1?5:p==3?15:p==5?15:p==15?60:p==30?60:p==45?60:p==60?240:p==120?240:p==180?240:p==240?1440:p==1440?1440*5:1440*5
+agg      = aggregate_signals()
+aggHTF   = security(syminfo.tickerid, tostring(higherTF), agg)
+
+col  = agg > (uth1/100) and agg < (uth2/100) ? color.new(color.orange, 20) 
+     : agg > (uth2/100) ? color.new(color.red, 20) 
+     : agg <= (lth1/100) and agg >= (lth2/100) ? color.new(color.green, 20) 
+     : agg <= (lth2/100) ? color.new(color.lime, 20) 
+     : color.silver
+
+agg_sc     = scaler(agg)
+aggHTF_sc  = scaler(aggHTF)
+plot(agg_sc, color=col, style=plot.style_columns, transp=40)
+plot(agg_sc, color=color.gray, transp=0)
+plot(aggHTF_sc, color=color.blue, linewidth=1, transp=0)

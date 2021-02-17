@@ -1,0 +1,23 @@
+//@version=4
+study("Forecasting-Simple-Mean-Method", '', true, precision=2)
+
+// author: capissimo
+
+// Simple Mean method
+// The idea behind simple mean method is to somehow extend historical mean to the future. 
+// In this case the forecast equals to last value plus average change.
+
+//*** Inputs
+price = input(close, "Price Data")
+p     = input(5,     "Lookback Window",  minval=1)
+fp    = input(34,    "Forecasted Periods", minval=1)
+
+//*** Main
+simple_mean(x, p) => x[1] + sma(change(x, p), p)
+
+forecast = simple_mean(price, p) 
+
+var line fl = na
+line.delete(fl[1])
+fl := line.new(time, close, time + 60 * 60 * 24 * fp, forecast, 
+               xloc.bar_time, extend=extend.none, style=line.style_solid, color=color.blue, width=2)

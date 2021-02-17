@@ -1,0 +1,63 @@
+//@version=4
+study("Mean Reversion Indicator", '', false, precision=2)
+
+// author: capissimo
+// This is a mean reversion indicator that anticipates a local trend reversion, 
+// It is best used in candle-by-candle processing. 
+// Actually, it is a channel with the mid-line serving as a moving mean baseline.
+// Each of the two curves run up and down within this channel bouncing off from the top and bottom bounds.
+// Touching the bounds serves as an indication of a local trend reversal. 
+// The reversal signal is stronger when there exists a resonance (symmetry) in the two curves.
+// The background histogram shows a Karobein oscillator that contributes support or resistance for the signal.
+
+//*** Functions 
+scaleMinimax(x, p, min, max) => 
+    hi = highest(x, p), lo = lowest(x, p)
+    (max - min) * (x - lo)/(hi - lo) + min
+
+scale(x, p) => scaleMinimax(x, p, lowest(close, p), highest(close, p))
+
+percentAboveLow(x, p) => // Percentage of current close above low in lookback window of window_length days
+    -(x[1] / lowest(low, p) - 1)
+
+percentBelowHigh(x, p) => // Percentage of current close below high in lookback window of window_length days
+    -(x[1] / highest(high, p) - 1)
+
+karo(x, p) => // Karobein Oscillator
+    ma = ema(x, p)
+    a  = ema(ma < ma[1] ? ma/ma[1] : 0, p)
+    b  = ema(ma > ma[1] ? ma/ma[1] : 0, p)
+    c  = (ma/ma[1])/(ma/ma[1] + b)
+    (2*((ma/ma[1])/(ma/ma[1] + c*a)) - 1) 
+    
+//*** Inputs
+price = input(close, "Price Data")
+tf    = input(20,    "Time Frame", options=[1,2,3,4,5,6,7,8,9,10,13,15,20,21,22,30,34,45,55,60,89,120,144,180,233,240,390])
+repnt = input(false, "Repaint?")
+//oft   = input(3,     "Flag Offset", minval=1)
+
+//*** Main
+sec       = security(syminfo.tickerid, tostring(tf), repnt ? price : price[1], barmerge.gaps_off, barmerge.lookahead_on)
+sn_scaled = scaleMinimax(sign(sec-sec[1]), 2, -1, 1)
+meanslope = 2 / (1 + pow(2.71828182846, -sec/sec[1])) - 1 // mean of the absolute value of slopes
+ms_scaled = scaleMinimax(meanslope, 2, -1, 1)
+kro       = scaleMinimax(karo(sec, tf), tf, -1, 1)
+
+state = 0
+state := sn_scaled==ms_scaled and sn_scaled<0 ? -1 : sn_scaled==ms_scaled and sn_scaled>0 ? 1 : nz(state[1])
+pl    = scaleMinimax(percentAboveLow(sec, 2), tf, -1, 1)
+ph    = scaleMinimax(percentBelowHigh(sec, 2), tf, -1, 1)
+
+gray  = color.gray, lime = color.lime, red = color.red
+red50 = color.new(red, 50), lime50 = color.new(lime, 50)
+c     = pl==0?red:ph==0?lime:abs(pl)<ph?lime50:abs(pl)>ph?red50:falling(abs(pl)+ph,2)?red50:rising(abs(pl)+ph,2)?lime50:na
+
+hline(1,  color=gray, linestyle=hline.style_solid, linewidth=1)
+hline(0,  color=gray, linestyle=hline.style_solid, linewidth=1)
+hline(-1, color=gray, linestyle=hline.style_solid, linewidth=1)
+plot(kro, color=gray, style=plot.style_histogram, linewidth=3, transp=70) // Karobein Osc.
+plot(pl,  color=lime, linewidth=1, transp=0)  
+plot(ph,  color=red,  linewidth=1, transp=0)
+plot(1,   color=pl==1 or ph==1 ? color.new(color.red, 0) : na, linewidth=2, transp=0)
+plot(-1,  color=pl==-1 or ph==-1 ? color.new(color.green, 0) : na, linewidth=2, transp=0)
+//plot(0, style=plot.style_circles, linewidth=4, color=c, transp=0, offset=oft, show_last=1) // todo item

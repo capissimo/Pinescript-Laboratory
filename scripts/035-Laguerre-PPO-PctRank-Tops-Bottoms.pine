@@ -1,0 +1,54 @@
+//@version=4
+study("Laguerre PPO PercentileRank Mkt Tops & Bottoms", "Laguerre PPO PctRank Tops-Bottoms", false, precision=1)
+
+// Created by capissimo, original by ChrisMoody, PPO Code by TheLark
+// UPDATED Laguerre PPO PercentileRank Market Tops & Bottoms squeezed into a line chart seems to be more precise
+
+pctile    = input(90,   "Percentile Threshold Extreme Value, Exceeding Creates Colored Histogram")
+wrnpctile = input(70,   "Percentile Threshold Warning Value, Exceeding Creates Colored Histogram")
+Short     = input(0.4,  "PPO Setting")
+Long      = input(0.8,  "PPO Setting")
+lkbT      = input(200,  "Look Back Period For 'Tops' Percent Rank is based off of?")
+lkbB      = input(200,  "Look Back Period For 'Bottoms' Percent Rank is based off of?")
+sl        = input(true, "Show Threshold Line?")
+swl       = input(true, "Show Warning Threshold Line?")
+
+scaleMinimax(X, p, min, max) => 
+    hi = highest(X, p), lo = lowest(X, p)
+    (max - min) * (X - lo)/(hi - lo) + min
+
+lag(g, p) => // Laguerre PPO Code from TheLark
+    L0=0.0, L0 := (1 - g)*p+g*nz(L0[1])
+    L1=0.0, L1 := -g*L0+nz(L0[1])+g*nz(L1[1])
+    L2=0.0, L2 := -g*L1+nz(L1[1])+g*nz(L2[1])
+    L3=0.0, L3 := -g*L2+nz(L2[1])+g*nz(L3[1])
+    (L0 + 2*L1 + 2*L2 + L3)/6
+
+lmas = lag(Short, hl2)
+lmal = lag(Long, hl2)
+
+pctileB = pctile * -1
+wrnpctileB = wrnpctile * -1
+
+ppoT = (lmas-lmal)/lmal*100
+ppoB = (lmal - lmas)/lmal*100
+pctRankT = percentrank(ppoT, lkbT)
+pctRankB = percentrank(ppoB, lkbB) * -1
+
+colT = pctRankT >= pctile ? color.red : pctRankT >= wrnpctile and pctRankT < pctile ? color.orange : color.gray
+colB = pctRankB <= pctileB ? color.lime : pctRankB <= wrnpctileB and pctRankB > pctileB ? color.green : color.silver
+
+//plot(pctRankT, title="Percentile Rank Columns", color=colT, style=plot.style_columns, linewidth=1, transp=0)
+plot(sl and pctile ? pctile : na, title="Extreme Move Percentile Threshold Line", color=color.black, style=plot.style_linebr, linewidth=1, transp=0)
+plot(swl and wrnpctile ? wrnpctile : na, title="Warning Percentile Threshold Line", color=color.gray, style=plot.style_line, linewidth=1, transp=0)
+
+//plot(pctRankB, title="Percentile Rank Columns", color=colB, style=plot.style_columns, linewidth=2, transp=0)
+plot(sl and pctileB ? pctileB : na, title="Extreme Move Percentile Threshold Line", color=color.black, style=plot.style_linebr, linewidth=1, transp=0)
+plot(swl and wrnpctileB ? wrnpctileB : na, title="Warning Percentile Threshold Line", color=color.gray, style=plot.style_line, linewidth=1, transp=0)
+plot(0, title="0 Line Circles Plot", style=plot.style_circles, linewidth=1, color=color.black, transp=0)
+plot(0, title="0 Line-Line Plot", style=plot.style_linebr, linewidth=1, color=color.black, transp=0)
+
+// added by capissimo
+both = scaleMinimax((pctRankT+pctRankB)/2, 1440, -100, 100)
+plot(both, color=color.gray, linewidth=4, transp=0)
+plot(both, color=both<0?colB:both>0?colT:color.gray, linewidth=3, transp=0)

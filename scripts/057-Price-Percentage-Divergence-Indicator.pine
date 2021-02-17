@@ -1,0 +1,39 @@
+//@version=4
+study("Price Percentage Divergence Indicator", '', false, precision=2)
+
+// author: capissimo
+
+//*** Functions
+scaleMinimax(X, p, min, max) => 
+    hi = highest(X, p), lo = lowest(X, p)
+    (max - min) * (X - lo)/(hi - lo) + min
+
+ppo(x, p) => // Price Percentage Oscillator (PPO)
+    up   = rma(max(change(x), 0), p)
+    down = rma(-min(change(x), 0), p)
+    down==0 ? 1 : up==0 ? 0 : 1 - (1 / (1 + up / down))
+
+stepline(x, y) => (max(x, y) - min(x, y)) + min(x, y)
+
+//*** Inputs
+src   = input(close, "Price Data")
+fast  = input(13,    "Fast Lookback", options=[1,2,3,5,8,13,15,20,21,30,34,45,55,60,89,120,144,180,233,240,377,610,987,1440]) 
+slow  = input(240  , "Slow Lookback", options=[1,2,3,5,8,13,15,20,21,30,34,45,55,60,89,120,144,180,233,240,377,610,987,1440]) 
+pma   = input(34,    "MA Lookback",   options=[1,2,3,5,8,13,15,20,21,30,34,45,55,60,89,120,144,180,233,240,377,610,987,1440]) 
+mmx   = input(1440,  "Scaler Lookback", minval=1)
+
+//*** Main
+price = scaleMinimax(stepline(src[1], src), mmx, 0, 1)
+pp    = fast <= 5 ? fast * 5 : fast <= 60 ? fast * 5 : fast 
+rs    = 0.1 * (rsi(price, fast))
+
+divergence = scaleMinimax(ppo(price, fast) - ppo(price, slow), fast, 0, 1) 
+weighted   = wma(divergence, pma)
+reweighted = ema(weighted, pma)
+rs_scaled  = scaleMinimax(rs, pma, 0, 1)
+
+plot(1, color=color.gray), plot(0.5, color=color.gray), plot(0, color=color.gray)
+plot(rs_scaled, linewidth=1, transp=100)
+p1 = plot(weighted, color=divergence > 0.5 ? #2196f3 : #ff1100, linewidth=2, transp=0)
+p2 = plot(reweighted, color=color.silver, linewidth=1, transp=20)
+fill(p1, p2, color=color.silver, transp=60)

@@ -1,0 +1,90 @@
+//@version=4
+strategy("Normalized Vector Strategy (v.3)", '', false, precision=2)
+
+// author: capissimo
+// This is a scaled Normalized Vector Strategy with a Karobein Oscillator
+// original: Drkhodakarami (https://www.tradingview.com/script/Fxv2xFWe-Normalized-Vector-Strategy-By-Drkhodakarami-Opensource/)
+
+// Repainting: in general there two types of repainting:
+// * when the last candle is constantly being redrawn
+// * when the indicator draws a different configuration after it has been deactivated/reactivated, i.e. refreshed
+
+// The former is a natural behaviour, which presents a constant source of frustration, 
+// when a signal directly depends on the current market situation and can be overcome 
+// with various indirect techniques like divergence.
+
+// The latter suggests a flaw in the indicator design.
+// Unfortunately, the Normalized Vector Strategy is repainting in the latter sense, although being
+// really promising. Would be nice if our community suggests a solution to this problem ))
+
+// This strat consistently performs with high accuracy, showing up to 96% scores
+// Here are some of the best parameters:
+// TF     Lookback   Performance (ca.)
+// 1m     13         92%
+// 3m     34         92%
+// 5m     85         92%
+// 15m    210        90%
+// 30m    360        89%
+// 1H     1440,720   94%, 87%
+
+// The Karobein Oscillator has an intrinsic sinusoidal behaviour that helps in determining direction and timing.
+// It does not repaint.
+// original: alexgrover (https://www.tradingview.com/script/JiNi0f62-Karobein-Oscillator/)
+
+scaleMinimax(X, p, min, max) => 
+    hi = highest(X, p), lo = lowest(X, p)
+    (max - min) * (X - lo)/(hi - lo) + min
+
+price    = input(close,  "Price Data")
+tf       = input(34,     "Timeframe", minval=1, maxval=1440)
+thresh   = input(14.,    "Threshold", minval=.1, step=.1) 
+div      = input(1000000,"Divisor", options=[1,10,100,1000,10000,100000,1000000,10000000,100000000])
+showVol  = input(false,  "Volume")
+useold   = input(true,   "Use Old System")
+
+lime  = color.new(color.lime, 10), fuchsia = color.new(color.fuchsia, 10), 
+black = color.new(color.black, 100), gray = color.new(color.gray, 50)
+
+vol  = useold ? security(syminfo.tickerid, tostring(tf), volume, barmerge.gaps_off, barmerge.lookahead_on) 
+              : security(syminfo.tickerid, tostring(tf), volume)
+obv  = cum(change(price) > 0 ? vol : change(price) < 0 ? -vol : 0*vol)
+prix = showVol ? obv : price
+    
+getdiff(prc, tf) =>
+    prev  = useold ? security(syminfo.tickerid, tostring(tf), prc[1], barmerge.gaps_off, barmerge.lookahead_on) :
+                     security(syminfo.tickerid, tostring(tf), prc[1])
+    curr  = useold ? security(syminfo.tickerid, tostring(tf), prc, barmerge.gaps_off, barmerge.lookahead_on) : 
+                     security(syminfo.tickerid, tostring(tf), prc)
+    (curr/prev) - 1
+    
+p  = getdiff(prix, tf)
+up = thresh/div, dn = -thresh/div
+longCondition  = crossover(p, up)
+shortCondition = crossunder(p, dn)
+
+bg = longCondition ? lime : shortCondition ? fuchsia : black
+cl = p > up ? color.green : p < dn ? color.red : color.silver
+
+bgcolor(bg, editable=false)
+plot(scaleMinimax(up, 2500, -1, 1), color=lime, editable=false, transp=0)
+hline(0, linestyle=hline.style_dotted, title="base line", color=gray, editable=false)
+plot(scaleMinimax(dn, 2500, -1, 1), color=fuchsia, editable=false, transp=0)
+plot(scaleMinimax(p, 2500, -1, 1), color=cl, style=plot.style_histogram, transp=70, editable=false)
+plot(scaleMinimax(p, 2500, -1, 1), color=cl, style=plot.style_linebr, title="prediction", transp=0, editable=false)
+
+strategy.entry("L", true, 1, when=longCondition)
+strategy.entry("S", false, 1, when=shortCondition)
+
+alertcondition(longCondition, title='Long', message='Long Signal!')
+alertcondition(shortCondition, title='Short', message='Short Signal!')
+
+//*** Karobein Oscillator
+per  = input(8, "Karobein Osc Lookback")
+
+prix2  = ema(price, per)
+a = ema(prix2 < prix2[1] ? prix2/prix2[1] : 0, per)
+b = ema(prix2 > prix2[1] ? prix2/prix2[1] : 0, per)
+c = (prix2/prix2[1])/(prix2/prix2[1] + b)
+d = 2*((prix2/prix2[1])/(prix2/prix2[1] + c*a)) - 1
+
+plot(scaleMinimax(d, 2500, -1, 1), color=color.orange, transp=0)

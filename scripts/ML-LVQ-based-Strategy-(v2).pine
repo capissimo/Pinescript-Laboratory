@@ -1,0 +1,213 @@
+// This source code is subject to the terms of the Mozilla Public License 2.0 at https://mozilla.org/MPL/2.0/
+// © capissimo
+
+//@version=4
+study('Machine Learning: LVQ-based Strategy (v.2)', '', true, precision=4, max_labels_count=200, max_bars_back=5000)
+
+// LVQ-based Strategy (FX and Crypto)
+
+// Description: 
+
+// Learning Vector Quantization (LVQ) can be understood as a special case of 
+// an artificial neural network, more precisely, it applies a winner-take-all 
+// learning-based approach. It is based on prototype supervised learning 
+// classification task and trains its weights through a competitive 
+// learning algorithm.
+
+// Algorithm:
+
+// Initialize weights
+// Train for 1 to N number of epochs
+//   Select a training example
+//   Compute the winning vector
+//   Update the winning vector
+// Classify test sample
+
+// The LVQ algorithm offers a framework to test various indicators easily to see  
+// if they have got any *predictive value*. One can easily add cog, wpr and others.
+// Note: TradingViews's playback feature helps to see this strategy in action.
+// The algo is tested with BTCUSD/1Hour.
+
+// Warning: This is a preliminary version! Signals ARE repainting.
+// ***Warning***: Signals LARGELY depend on hyperparams (lrate and epochs).
+
+// Style tags: Trend Following, Trend Analysis
+// Asset class: Equities, Futures, ETFs, Currencies and Commodities
+// Dataset: FX Minutes/Hours+++/Days
+
+//-------------------- Inputs
+
+ds          = input(close, 'Dataset')
+p           = input(14,    'Lookback Window |1..2160|',   minval=1, maxval=2160)
+lrate       = input(0.1,   'Learning Rate |0.0001..0.1|', minval=0.0001, maxval=0.1, step=0.0001)
+epochs      = input(5,     'Epochs',                      minval=1, maxval=100)
+ftype       = input('Volatility','Filter Signals by',     options=['Volatility','Volume','Both','None'])
+reverse     = input(false, 'Reverse Signals?')
+
+startYear   = input(2020,  'Training Start Year',         minval=2010)
+startMonth  = input(1,     'Training Start Month',        minval=1, maxval=12)
+startDay    = input(1,     'Training Start Day',          minval=1, maxval=31)
+stopYear    = input(2021,  'Training Stop Year',          minval=2010)
+stopMonth   = input(1,     'Training Stop Month',         minval=1, maxval=12)
+stopDay     = input(1,     'Training Stop Day',           minval=1, maxval=31)
+
+//-------------------- System Variables
+
+var BUY  = -1 
+var SELL =  1 
+var HOLD =  0
+
+buy  = reverse ?  1 : -1  //-- some TFs and assets require reversing the signals!!
+sell = reverse ? -1 :  1
+
+//--------------------  Dynamic Arrays
+
+var int wnr    = 0      // winner's signal
+var int signal = HOLD
+
+//--------------------  Regular arrays
+
+var float[] features = array.new_float()         //-- training data
+var float[] weights0 = array.new_float(3, 1.)    //-- learning vectors
+var float[] weights1 = array.new_float(3, 100.)
+
+//-------------------- Custom Functions
+
+norm(x, p) => (x - lowest(x, p)) / (highest(x, p) - lowest(x, p))  // normalize features
+
+getwinner(features, weights0, weights1) =>  // compute the winning vector by Euclidean distance 
+    d0 = 0.
+    d1 = 0.
+    size = array.size(features)
+    for i=0 to size-1
+        d0 := d0 + pow(array.get(features, i) - array.get(weights0, i), 2) 
+        d1 := d1 + pow(array.get(features, i) - array.get(weights1, i), 2) 
+    d0 > d1 ? SELL : d0 < d1 ? BUY : HOLD      
+
+update(features, weights0, weights1, w, lr) =>  // update the weight array of the winner
+    size = array.size(features)
+    for i=0 to size-1
+        if w==sell
+            array.set(weights0, i, array.get(weights0, i) + lrate * (array.get(features, i) - array.get(weights0, i))) 
+        if w==buy
+            array.set(weights1, i, array.get(weights1, i) + lrate * (array.get(features, i) - array.get(weights1, i))) 
+
+volumeBreak(thres) =>  
+    rsivol   = rsi(volume, 14)  
+    osc      = hma(rsivol, 10)  
+    osc > thres                     
+
+volatilityBreak(volmin, volmax) => atr(volmin) > atr(volmax)
+
+//-------------------- Logic
+
+x = ds[barstate.ishistory ? 0 : 1]
+
+periodStart = timestamp(startYear, startMonth, startDay, 0, 0)
+periodStop  = timestamp(stopYear,  stopMonth,  stopDay, 0, 0)
+
+filter =   ftype=='Volatility' ? volatilityBreak(1, 10) 
+         : ftype=='Volume'     ? volumeBreak(49) 
+         : ftype=='Both'       ? volatilityBreak(1, 10) and volumeBreak(49)
+         :                       true
+
+// The core logic of the agorithm
+
+// Collect training data (i.e. features)
+f1 = rsi(x, p)  //-- alt: use norm function to unify data to a common range of |0,..,100|
+f2 = cci(x, p)  //--      if it has differing ranges
+f3 = roc(x, p)
+
+// Train the model using particular training period
+if time >= periodStart and time <= periodStop    
+    array.clear(features)
+    array.push(features, f1)
+    array.push(features, f2)
+    array.push(features, f3)
+
+    for i=1 to epochs 
+        w = getwinner(features, weights0, weights1)  
+        update(features, weights0, weights1, w, lrate)  //-- this is 'the act of learning'
+
+// Classify new input sample
+if time > periodStop                            
+    array.clear(features)
+    array.push(features, f1)
+    array.push(features, f2)
+    array.push(features, f3)
+    wnr := getwinner(features, weights0, weights1)
+
+// Generate signal
+signal := wnr==SELL and filter ? sell : wnr==BUY and filter ? buy : nz(signal[1])  
+
+changed = change(signal)
+
+startLongTrade  = changed and signal==BUY
+startShortTrade = changed and signal==SELL
+endLongTrade    = changed and signal==SELL 
+endShortTrade   = changed and signal==BUY  
+
+//-------------------- Rendering
+
+plotshape(startLongTrade  ? low  : na, 'Buy',  shape.labelup,   location.belowbar, color.blue, size=size.small)
+plotshape(startShortTrade ? high : na, 'Sell', shape.labeldown, location.abovebar, color.red,  size=size.small)
+plot(endLongTrade         ? high : na, 'StopBuy',  color.blue, 2, plot.style_cross)
+plot(endShortTrade        ? low  : na, 'StopSell', color.red,  2, plot.style_cross)
+
+//-------------------- Alerting
+
+alertcondition(startLongTrade,  'Buy',  'Go long!')
+alertcondition(startShortTrade, 'Sell', 'Go short!') 
+alertcondition(startLongTrade or startShortTrade, 'Alert', 'Deal Time!')
+
+//-------------------- Backtesting (TODO)
+
+lot_size  = input(0.01, 'Lot Size', options=[0.01,0.1,0.2,0.3,0.5,1,2,3,5,10,20,30,50,100,1000]) 
+
+ohl3 = (open+high+low)/3
+
+var float start_long_trade  = 0.  
+var float long_trades       = 0.
+var float start_short_trade = 0.  
+var float short_trades      = 0.
+var int   wins              = 0
+var int   trade_count       = 0
+
+if startLongTrade 
+    start_long_trade := ohl3 
+if endLongTrade
+    trade_count  := 1
+    ldiff = (ohl3 - start_long_trade)
+    wins         := ldiff > 0 ? 1 : 0
+    long_trades  := ldiff * lot_size   
+if startShortTrade 
+    start_short_trade := ohl3
+if endShortTrade
+    trade_count  := 1
+    sdiff = (start_short_trade - ohl3)
+    wins         := sdiff > 0 ? 1 : 0
+    short_trades := sdiff * lot_size 
+    
+cumreturn   = cum(long_trades) + cum(short_trades)  //-- cumulative return 
+totaltrades = cum(trade_count)
+totalwins   = cum(wins)  
+totallosses = totaltrades - totalwins == 0 ? 1 : totaltrades - totalwins
+
+//-------------------- Information
+
+var label lbl = na
+
+tbase = (time - time[1]) / 1000
+tcurr = (timenow - time_close[1]) / 1000
+
+info =  'CR='          + tostring(cumreturn,             '#.#') 
+      + '\nTrades: '   + tostring(totaltrades,           '#')
+      + '\nWin/Loss: ' + tostring(totalwins/totallosses, '#.##') 
+      + '\nWinrate: '  + tostring(totalwins/totaltrades, '#.#%') 
+      + '\nBar Time: ' + tostring(tcurr / tbase,         '#.#%')
+
+if input(true, 'Show Information?') and barstate.islast  
+    lbl := label.new(bar_index, close, info, xloc.bar_index, yloc.price, 
+                     color.new(color.blue, 100), label.style_label_left, color.black, size.small, text.align_left)
+    label.delete(lbl[1])
+    

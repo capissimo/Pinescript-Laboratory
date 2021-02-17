@@ -1,0 +1,90 @@
+// This source code is subject to the terms of the Mozilla Public License 2.0 at https://mozilla.org/MPL/2.0/
+// © capissimo
+
+//@version=4
+study("Support and Resistance Levels", '', true)
+
+// Detecting Support and Resistance Levels
+
+// Description: 
+// Support & Resistance levels are essential for every trader to 
+// define the decision points of the markets. 
+// If you are long and the market falls below the previous support level, 
+// you most probably have got the wrong position and better exit.
+
+// This script uses the first and second deviation of a curve to
+// find the turning points and extremes of the price curve.
+
+// The deviation of a curve is nothing else than the momentum of a curve
+// (and inertia is another name for momentum).
+// It defines the slope of the curve. If the slope of a curve is zero, 
+// you have found a local extreme. The curve will change from rising to 
+// falling or the other way round.
+
+// The second deviation, or the momentum of momentum, shows you the turning 
+// points of the first deviation. This is important, as at this point the 
+// original curve will switch from acceleration to break mode.
+
+// Using the logic laid out above the support&resistance indicator will show 
+// the turning points of the market in a timely manner.
+// Depending on level of market-smoothing it will show the long term or 
+// short term turning points.
+
+// This script first calculates the first and second deviation of 
+// the smoothed market, and in a second step runs the turning point detection.
+
+// Style tags: Trend Following, Trend Analysis
+// Asset class: Equities, Futures, ETFs, Currencies and Commodities
+// Dataset: FX Minutes/Hours/Days
+
+//-------------------- Inputs
+
+lookback  = input(21,    'Lookback Window', minval=2)
+filterDMI = input(false, 'Filter DMI?')
+show_chan = input(false, 'Show Channal?')
+
+//-------------------- Logic
+
+// 1) get positive and negative directional movements.
+[pdm, mdm, _] = dmi(14, lookback)    
+ 
+// 2) the market data is smoothed.
+dema = ema(ema(close, lookback), lookback)
+
+// 3) the momentum of the market is calculated. 
+mom1 = mom(dema, round(lookback/2))    // 1st momemtum of ma
+
+// 4) the momentum of the momentum is calculated.
+mom2 = mom(mom1, round(lookback/2))    // momemtum of momemtum of ma (2nd deviation)
+
+// 5) determine criteria
+crossmomover  = crossover(mom2, 0)
+crossmomunder = crossunder(mom2, 0)
+
+ll = lowest(low,   lookback)  // lowest low before now (this hour, today, etc.)
+hh = highest(high, lookback)  // highest high before now
+
+//-------------------- Rendering
+
+// If the second momentum crosses above zero, the first momentum will have 
+// local low and the market will be in a state when the trend comes to an end.
+
+if crossmomover       // possible low (2nd deviation is zero)
+	if not filterDMI or (filterDMI and pdm>mdm)
+        line.new(time-lookback, ll, time + 60 * 60 * 24 * timeframe.multiplier * lookback/2, ll, 
+                 color=color.green, xloc=xloc.bar_time, style=line.style_solid, width=3)
+
+// If the second momentum crosses below zero, the first momentum will have 
+// local high and the market will be in a state when the trend comes to an end.
+
+if crossmomunder      // possible high
+	if not filterDMI or (filterDMI and pdm<mdm)
+        line.new(time-lookback, hh, time + 60 * 60 * 24 * timeframe.multiplier * lookback/2, hh, 
+                 color=color.red, xloc=xloc.bar_time, style=line.style_solid, width=3)
+
+// Optionally, show channal
+plot(show_chan and crossmomover  and (not filterDMI or pdm>mdm) ? ll : na, style=plot.style_stepline, color=color.green)		
+plot(show_chan and crossmomunder and (not filterDMI or pdm<mdm) ? hh : na, style=plot.style_stepline, color=color.red)	
+
+// Show double exponential MA
+plot(dema)

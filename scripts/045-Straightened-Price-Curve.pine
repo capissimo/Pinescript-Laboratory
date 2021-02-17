@@ -1,0 +1,41 @@
+//@version=4
+study("Straightened Price Curve", '', true)
+
+// author: capissimo
+// This is another among zillions of attempts at a moving average of a security. More precisely, two attempts at one go)
+// The zzoid function generates a zigzag-like MA that can adopt different forms.
+// The stepline function creates, sure enough, a stepline.
+
+//*** Functions
+std(y, p) => cum((y - sma(y, p)) / stdev(y, p)) / bar_index
+
+zzoid(x, y, fast, slow, stdp) => // zigzag-like MA
+    ycum1  = cum(x) 
+    ycum2  = cum(y) 
+    fastma = sma(ycum1, fast)
+    slowma = sma(ycum1, slow) 
+    macd   = fastma - slowma
+    stdz   = std(macd, stdp)
+    stdz * (max(x, y) - min(x, y)) + min(x, y) 
+
+stepline(x, y) => (max(x, y) - min(x, y)) + min(x, y)
+
+//*** Inputs
+price   = input(close, "Data Source") 
+tf1     = input(5,     "Time frame 1",  minval=1, maxval=240)  
+tf2     = input(5,     "Time frame 2",  minval=1, maxval=240)
+fast_p  = input(1,     "Fast Lookback", minval=1)   
+slow_p  = input(2,     "Slow Lookback", minval=1)   
+std_p   = input(2,     "Standadize Lookback", minval=1)  
+
+//*** Main
+prix1  = security(syminfo.tickerid, tostring(tf1), price[1], barmerge.gaps_off, barmerge.lookahead_on) 
+prix2  = security(syminfo.tickerid, tostring(tf2), price[1], barmerge.gaps_off, barmerge.lookahead_on)
+
+st = stepline(prix1, prix2) 
+zz = zzoid(prix1, prix2, fast_p, slow_p, std_p)    
+long  = zz[2] > zz[1] and zz[1] < zz
+short = zz[2] < zz[1] and zz[1] > zz
+
+plot(zz, color=color.fuchsia, linewidth=3, transp=0)
+plot(st, color=color.lime, linewidth=2, transp=0)

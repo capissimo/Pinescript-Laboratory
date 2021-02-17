@@ -1,7 +1,8 @@
 //@version=3
 study("Mean Reversion and Momentum - Indicator version", "MRM", false)
 
-// Mean Reversion and Momentum
+// Mean Reversion and Momentum Updated with gaussiana smoothing
+
 // Interpretation:
 // - Divergence means trend reversal
 // - Parallel movement means trend continuation

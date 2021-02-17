@@ -1,0 +1,143 @@
+//@version=4
+study("Williams Vix Fix paired with Supertrend Heatmap", '', false, precision=2)
+
+// compilation: capissimo
+// This script shows a powerful Williams' Vix Fix indicator 
+// paired with a modified Supertrend Heatmap, originally created by Daveatt.
+
+//*** Inputs
+tp   = input(1,     "VixFix UP [1,2]", minval=1, maxval=2)
+tp2  = input(1,     "VixFix DN [1,2]", minval=1, maxval=2)
+rev  = input(false, "Reverse Colors")
+psd  = input(22,    "LookBack Period Standard Deviation High/Low", minval=1)
+bbl  = input(20,    "Bolinger Band Length", minval=1)
+mult = input(2.0,   "Bollinger Band Standard Deviation Up/Dn", minval=1., maxval=5., step=.1)
+p    = input(60,    "LookBack", minval=1)
+lb   = input(50,    "Look Back Period Percentile High/Low", minval=1)
+ph   = input(.85,   "Highest Percentile - 0.90=90%, 0.95=95%, 0.99=99%", minval=.5, maxval=1.)
+pl   = input(1.01,  "Lowest Percentile - 1.10=90%, 1.05=95%, 1.01=99%", minval=1., maxval=1.2)
+hp   = input(false, "Show High Range - Based on Percentile and LookBack Period?")
+sd   = input(false, "Show Standard Deviation Line?")
+hp2  = input(false, "Show Low Range - Based on Percentile and LookBack Period?")
+sd2  = input(false, "Show Standard Deviation Line?")
+
+//*** Functions
+scaler(x, p) => (x - lowest(x, p)) / (highest(x, p) - lowest(x, p))
+
+//*** Main
+prix  = scaler(close, p)
+prixn = 1 - prix
+neg   = 1 - scaler(high, p)
+hi    = scaler(high, p)
+lo    = scaler(low, p)
+
+up1   = (highest(prix, psd) - lo)/highest(prix, psd)
+up2   = (highest(prix, psd) - hi)/highest(prix, psd)
+dn1   = (highest(prixn, psd) - neg)/highest(prixn, psd)
+dn2   = scaler((high - lowest(close, psd))/lowest(close, psd), p) 
+wvf   = tp==1 ? up1 : up2
+wvfr  = tp2==1 ? dn1 : dn2
+
+red   = rev ? color.new(color.lime, 10) : color.new(color.fuchsia, 10)
+green = rev ? color.new(color.fuchsia, 10) : color.new(color.lime, 10) 
+
+sDev      = mult * stdev(wvf, bbl)
+midLine   = sma(wvf, bbl)
+lowerBand = midLine - sDev
+upperBand = midLine + sDev
+rangeHigh = (highest(wvf, lb)) * ph
+rangeLow  = (lowest(wvf, lb)) * pl
+col = wvf >= upperBand or wvf >= rangeHigh ? red : color.new(color.gray, 70)
+
+sDev2      = mult * stdev(wvfr, bbl)
+midLine2   = sma(wvfr, bbl)
+lowerBand2 = midLine2 - sDev2
+upperBand2 = midLine2 + sDev2
+rangeHigh2 = (highest(wvfr, lb)) * ph
+rangeLow2  = (lowest(wvfr, lb)) * pl
+col2 = wvfr >= upperBand2 or wvfr >= rangeHigh2 ? green : color.new(color.gray, 70)
+
+plot(wvfr, "WVixFix Rev", style=plot.style_histogram, linewidth=4, color=col2)
+plot(wvf,  "WVixFix",     style=plot.style_histogram, linewidth=4, color=col)
+plot(wvfr, "WVixFix Rev", style=plot.style_stepline, linewidth=1, color=color.black, transp=0)
+plot(wvf,  "WVixFix",     style=plot.style_stepline, linewidth=1, color=color.black, transp=0)
+
+plot(hp and rangeHigh ? rangeHigh : na, "Range High Percentile", linewidth=1, color=color.purple, transp=0)
+plot(hp and rangeLow  ? rangeLow  : na, "Range Low Percentile", linewidth=1, color=color.purple, transp=0)
+plot(sd and upperBand ? upperBand : na, "Upper Band", linewidth=1, color=color.aqua, transp=0)
+
+plot(hp2 and rangeHigh2 ? rangeHigh2 : na, "Range High Percentile", linewidth=1, color=color.orange, transp=0)
+plot(hp2 and rangeLow2  ? rangeLow2  : na, "Range Low Percentile", linewidth=1, color=color.orange, transp=0)
+plot(sd2 and upperBand2 ? upperBand2 : na, "Upper Band", linewidth=1, color=color.teal, transp=0)
+
+//*** Supertrend Heatmap
+factor = input(1, "Supertrend Factor", minval=1, maxval=100) //3
+pd     = input(3, "Supertrend PD",     minval=1, maxval=100) //7
+
+supertrend(factor, pd) =>
+    up = hl2 - (factor * atr(pd))
+    dn = hl2 + (factor * atr(pd))
+    
+    trend_up = 0.0,   trend_up := close[1] > trend_up[1] ? max(up, trend_up[1]) : up
+    trend_down = 0.0, trend_down := close[1] < trend_down[1] ? min(dn, trend_down[1]) : dn
+    trend = 0.0,     trend := close > trend_down[1] ? 1: close< trend_up[1]? -1: nz(trend[1], 1)
+    tsl = trend==1? trend_up: trend_down
+
+    [trend, tsl]
+
+[trend, tsl] = supertrend(factor, pd)
+
+ST1_Trend_MTF = security(syminfo.tickerid, "5", trend)
+ST2_Trend_MTF = security(syminfo.tickerid, "15", trend)
+ST3_Trend_MTF = security(syminfo.tickerid, "30", trend)
+ST4_Trend_MTF = security(syminfo.tickerid, "60", trend)
+ST5_Trend_MTF = security(syminfo.tickerid, "120", trend)
+ST6_Trend_MTF = security(syminfo.tickerid, "180", trend)
+ST7_Trend_MTF = security(syminfo.tickerid, "240", trend)
+ST8_Trend_MTF = security(syminfo.tickerid, "D", trend)
+
+start = -.5, inc = .12
+p1=start, p2=p1-inc, p3=p2-inc, p4=p3-inc, p5=p4-inc, p6=p5-inc, p7=p6-inc, p8=p7-inc, p9=p8-inc
+
+get_bars(Trend)=>
+    since_st_buy = barssince(Trend == 1)
+    since_st_sell = barssince(Trend == -1)
+    [since_st_buy, since_st_sell]
+    
+[since_st1_buy, since_st1_sell] = get_bars(ST1_Trend_MTF)
+[since_st2_buy, since_st2_sell] = get_bars(ST2_Trend_MTF)    
+[since_st3_buy, since_st3_sell] = get_bars(ST3_Trend_MTF)    
+[since_st4_buy, since_st4_sell] = get_bars(ST4_Trend_MTF)    
+[since_st5_buy, since_st5_sell] = get_bars(ST5_Trend_MTF)    
+[since_st6_buy, since_st6_sell] = get_bars(ST6_Trend_MTF)    
+[since_st7_buy, since_st7_sell] = get_bars(ST7_Trend_MTF)    
+[since_st8_buy, since_st8_sell] = get_bars(ST8_Trend_MTF)    
+
+heatmap_color(cond1, cond2) =>
+    cond1 ? color.new(color.lime, 20) : cond2 ? color.new(color.fuchsia, 20) : na
+    
+lapos_x = timenow + round(change(time)*3)
+lapos_y = highest(3) // + (0.15 * highest(20))
+    
+draw_label(x,y, txt, textcolor, size) =>
+    var label Label = na
+    label.delete(Label)
+    Label := label.new(x, y, txt, color=color.new(color.white, 20), textcolor=textcolor, style=label.style_none, yloc=yloc.price, xloc=xloc.bar_time, size=size)
+
+draw_label(lapos_x, p1-inc, "5", color.black, size.tiny)
+draw_label(lapos_x, p2-inc, "15", color.black, size.tiny) 
+draw_label(lapos_x, p3-inc, "30", color.black, size.tiny) 
+draw_label(lapos_x, p4-inc, "H1", color.black, size.tiny) 
+draw_label(lapos_x, p5-inc, "H2", color.black, size.tiny) 
+draw_label(lapos_x, p6-inc, "H3", color.black, size.tiny) 
+draw_label(lapos_x, p7-inc, "H4", color.black, size.tiny) 
+draw_label(lapos_x, p8-inc, "Daily", color.black, size.tiny) 
+
+plotshape(-.60, "5",   shape.square, location.absolute, heatmap_color(since_st1_sell>since_st1_buy, since_st1_sell<since_st1_buy), size=size.tiny, transp=0)
+plotshape(-.70, "15",  shape.square, location.absolute, heatmap_color(since_st2_sell>since_st2_buy, since_st2_sell<since_st2_buy), size=size.tiny, transp=0)
+plotshape(-.80, "30",  shape.square, location.absolute, heatmap_color(since_st3_sell>since_st3_buy, since_st3_sell<since_st3_buy), size=size.tiny, transp=0)
+plotshape(-.90, "60",  shape.square, location.absolute, heatmap_color(since_st4_sell>since_st4_buy, since_st4_sell<since_st4_buy), size=size.tiny, transp=0)
+plotshape(-1.0, "120", shape.square, location.absolute, heatmap_color(since_st5_sell>since_st5_buy, since_st5_sell<since_st5_buy), size=size.tiny, transp=0)
+plotshape(-1.1, "180", shape.square, location.absolute, heatmap_color(since_st6_sell>since_st6_buy, since_st6_sell<since_st6_buy), size=size.tiny, transp=0)
+plotshape(-1.2, "240", shape.square, location.absolute, heatmap_color(since_st7_sell>since_st7_buy, since_st7_sell<since_st7_buy), size=size.tiny, transp=0)
+plotshape(-1.3, "D",   shape.square, location.absolute, heatmap_color(since_st8_sell>since_st8_buy, since_st8_sell<since_st8_buy), size=size.tiny, transp=0)

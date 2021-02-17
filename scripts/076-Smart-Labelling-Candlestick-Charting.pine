@@ -1,0 +1,186 @@
+//@version=4
+study("Smart Labelling - Candlestick Charting", '', true, precision=2)
+
+// author: capissimo
+
+// This is a full-fledged implementation of a system presented in an unique research paper 
+// 'Profitability of Candlestick Charting Patterns in the Stock Exchange of Thailand' (2017)
+// on candlestick charting, candlestick patterns, trend identification methods, and testing. 
+// You can easily find this paper in the Web. For example, visit:
+// https://www.researchgate.net/publication/320642444_Profitability_of_Candlestick_Charting_Patterns_in_the_Stock_Exchange_of_Thailand
+// This script is best suited for middle-to-higher time frames.
+// Possible future developments: trend identification and factor calculation techniques.
+
+//-------------------- System Variables
+
+var buy = '🠙' , var sell = '🠛', var cross = '✖'
+
+//-------------------- Custom Functions
+
+karo(x, p) => // Karobein Oscillator
+    ma = ema(x, p)
+    a  = ema(ma < ma[1] ? ma/ma[1] : 0, p)
+    b  = ema(ma > ma[1] ? ma/ma[1] : 0, p)
+    c  = (ma/ma[1])/(ma/ma[1] + b)
+    (2*((ma/ma[1])/(ma/ma[1] + c*a)) - 1) * 100
+
+mfi(p) => // Money Flow Index 
+    typical = hlc3
+    pmf = sum(volume * (change(typical) <= 0 ? 0 : typical), p)
+    nmf = sum(volume * (change(typical) >= 0 ? 0 : typical), p)
+    pmf / (pmf+nmf) * 100   // rs = rsi(pmf, nmf)
+
+
+// General Declarations
+
+price = input(close, "Price Data")
+
+O=open, H=high, L=low, C=close, V=volume
+RB = C - O               // real body
+US = RB > 0 ? H-C : H-O  // upper shadow
+LS = RB > 0 ? O-L : C-L  // lower shadow
+
+// Alternative definitions:
+// RB     = C - O          // real body
+// range  = H - L
+// middle = (O + C) / 2
+// aRB    = abs(RB)        // absolute real body
+// ratio  = aRB / range
+// LC     = (ratio > 0.6)  // longcandle
+// RBtop  = max(O, C)
+// RBbot  = min(O, C)
+// US     = H - RBtop      // upper shadow
+// LS     = RBbot - L      // lower shadow
+
+doji = (abs(O - C) <= (H - L) * 0.05)  //input(0.05, "Doji size", minval=0.01, step=.01)
+
+//-------------------- Inputs
+
+// Factor Calculation 
+
+fctr   = input("Karobein Oscillator", "Factor Selection", options=["Karobein Oscillator","Money Flow Index", "RSI", "Stochastic"])
+p      = input(2,  "Factor Lookback Window", minval=1)
+uthres = input(85, "Upper Threshold", minval=50, maxval=100) 
+lthres = input(15, "Lower Threshold", minval=0, maxval=50)   
+
+//-------------------- Logic
+
+factor = fctr=="Karobein Oscillator" ? karo(price, p) : fctr=="RSI" ? rsi(price, p) : fctr=="Stochastic" ? stoch(price, H, L, p) : mfi(p)
+
+// Trend Identification (determine if uptrend or downtrend)
+
+rule   = input("EMA10", "Trend Identification Rule", options=["Simple","SMA3","EMA10","SMA5/SMA10"])
+showma = input(false, 'Show MA?')
+
+uptrend = false, downtrend = false
+sm  = sma(C, 3)                    // #1
+em  = ema(C, 10)                   // #2
+ma5 = sma(C, 5), ma10 = sma(C, 10) // #3
+
+if rule=="Simple"
+    doji2      = RB == 0 
+    uptrend   := RB > 0 or doji2 and RB[1] > 0
+    downtrend := RB < 0 or doji2 and RB[1] < 0
+else
+    uptrend   := rule=="SMA3" ? C > sm : rule=="EMA10" ? C > em : ma5 > ma10 
+    downtrend := rule=="SMA3" ? C < sm : rule=="EMA10" ? C < em : ma5 < ma10  
+
+ma = rule=="SMA3" ? sm : rule=="EMA10" ? em : ma5 
+
+plot(showma and rule=="Simple"                  ? ma   : na, '', color.blue, 2)
+plot(showma and (rule=="EMA10" or rule=="SMA3") ? ma   : na, '', color.blue, 2)
+plot(showma and rule=="SMA5/SMA10"              ? ma10 : na, '', color.blue, 2)
+
+// Candlestick Pattern Definitions
+
+// One-day bullish candlestick patterns (Morris, 2006):
+wm  = H[1] == C[1] and C[1] > O[1] and O[1] == L[1] 
+cwm = H[1] == C[1] and C[1] > O[1] and O[1] > L[1] 
+owm = H[1] > C[1] and C[1] > O[1] and O[1] == L[1]
+lwc = H[1] > C[1] and C[1] > O[1] and O[1] > L[1]
+dd  = H[1] == C[1] and C[1] == O[1] and O[1] > L[1]
+wpu = H[1] == C[1] and C[1] > O[1] and O[1] > L[1] and LS[1] > 2*RB[1]
+bpu = H[1] == O[1] and O[1] > C[1] and C[1] > L[1] and LS[1] > 2*RB[1]
+
+// One-day bearish candlestick patterns:
+bm  = H[1] == O[1] and O[1] > C[1] and C[1] == L[1]
+cbm = H[1] > O[1] and O[1] > C[1] and C[1] == L[1]
+lbc = H[1] > O[1] and O[1] > C[1] and C[1] > L[1]
+obm = H[1] == O[1] and O[1] > C[1] and C[1] > L[1]
+gd  = H[1] > O[1] and O[1] == C[1] and C[1] == L[1]
+bss = H[1] > O[1] and O[1] > C[1] and C[1] == L[1] and US[1] > 2*RB[1]
+wss = H[1] > C[1] and C[1] > O[1] and O[1] == L[1] and US[1] > 2*RB[1]
+
+// Two-day bullish candlestick patterns:
+hp    = O[1]> O[2] and O[2] > C[2] and C[2] > C[1] and downtrend
+bulle = C[2] > O[1] and O[1] > C[1] and C[1] > O[2] and downtrend
+pl    = O[1] > C[2] and C[2] > L[1] and L[1] > O[2] and C[2] > 0.5*(O[1] + C[1]) and downtrend
+bullh = (O[1] > C[2] and C[2] > O[2] and O[2] > C[1] and RB[1] > RB[2] and downtrend) or (C[1] > C[2] and C[2] > O[2] and O[2] > O[1] and RB[1] > RB[2] and downtrend)
+bullk = C[2] > O[2] and O[2] > O[1] and O[1] > C[1] and downtrend
+
+// Two-day bearish candlestick patterns:
+dh    = C[1] > C[2] and C[2] > O[2] and O[2] > O[1] and uptrend
+beare = O[2] > C[1] and C[1] > O[1] and O[1] > C[2] and uptrend
+dcc   = O[2] > H[1] and H[1] > C[2] and C[2] > O[1] and C[2] < 0.5*(O[1] + C[1]) and uptrend
+bearh = (C[1] > O[2] and O[2] > C[2] and C[2] > O[1] and RB[1] > RB[2] and uptrend) or (O[1] > O[2] and O[2] > C[2] and C[2] > C[1] and RB[1] > RB[2] and uptrend)
+beark = C[1] > O[1] and O[1] > O[2] and O[2] > C[2] and uptrend
+
+// Three-day bullish candlestick patterns:
+tws = C[1] > O[1] and C[2] > O[2] and C[3] > O[3] and (C[3] > C[2] and C[2] > C[1]) and (C[1] > O[2] and O[2] > O[1]) and (C[2] > O[3] and O[3] > O[2] and downtrend)
+tiu = O[1] > C[1] and (O[1] >= O[2] and O[2] > C[1]) and O[1] > C[2] and C[2] >= C[1] and C[3] > O[3] and (C[3] > O[1] and downtrend)
+tou = O[1] > C[1] and (C[2] >= O[1] and O[1] > C[1] and C[1] >= O[2]) and abs(C[2] - O[2]) > abs(C[1] - O[1]) and C[3] > O[3] and (C[3] > C[2] and downtrend)
+ms  = O[1] > C[1] and abs(O[2] - C[2]) > 0 and C[1] > C[2] and C[1] > O[2] and C[3] > O[3] and (C[3] > 0.5*(O[1] + C[1]) and downtrend)
+
+// Three-day bearish candlestick patterns:
+tbc = O[1] > C[1] and O[2] > C[2] and O[3] > C[3] and (C[1] > C[2] and C[2] > C[3]) and (O[1] > O[2] and O[2] > O[3]) and (O[1] > O[2] and O[2] > C[1]) and (O[2] > O[3] and O[3] > C[2] and uptrend)
+tid = C[1] > O[1] and C[1] > O[2] and O[2] >= O[1] and (C[1] >= C[2] and C[2] > O[1]) and O[3] > C[3] and (O[1] > C[3] and uptrend)
+tod = C[1] > O[1] and (C[1] > O[2] and O[2] >= O[1]) and (C[1] >= C[2] and C[2] > O[1]) and O[3] > C[3] and (C[3] > O[1] and uptrend)
+es  = C[1] > O[1] and abs(O[2] - C[2]) > 0 and C[2] > C[1] and O[2] > C[1] and O[3] > C[3] and (C[3] < 0.5*(C[1] + O[1]) and uptrend)
+
+// Winsorizing submodule 
+
+wsmod  = input(true,       "===Winsorizing Module===")  
+method = input("High-Low", "Filtering Method", options=["Volume","High-Low","Avg(O,C)"])
+lb     = input(20,         "Filtering Lookback Window", minval=2)
+inc    = input(1.5,        "Increment (1.0==none)", minval=1., step=.01)
+
+scaler(x, p) => (x - lowest(x, p)) / (highest(x, p) - lowest(x, p))
+
+isabove(p, m) =>   // Difference-based filtering
+    if not wsmod
+        true
+    else 
+        diff = method=="Volume" ? scaler(V, lb) 
+             : method=="Avg(O,C)" ? scaler((O + C) / 2, lb) 
+             : scaler(H - L, lb)
+        ma  = sma(diff, lb) * inc
+        diff - ma > 0
+
+changed(x) => x != x[1]
+
+// Core logic to compute conditions
+
+above      = isabove(p, method)
+long_1day  = factor > uthres and (wm or cwm or owm or lwc or dd or wpu or bpu)
+short_1day = factor < lthres and (bm or cbm or lbc or obm or gd or bss or wss) 
+long_2day  = factor > uthres and (hp or bulle or pl or bullh or bullk) 
+short_2day = factor < lthres and (dh or beare or dcc or bearh or beark) 
+long_3day  = factor > uthres and (tws or tiu or tou or ms) 
+short_3day = factor < lthres and (tbc or tid or tod or es) 
+
+var state = 0
+state := (long_1day or long_2day or long_3day) and above ? 1 : (short_1day or short_2day or short_3day) and above ? -1 : nz(state[1])
+long  = changed(state) and state[1]==-1 
+short = changed(state) and state[1]==1 
+
+//-------------------- Rendering
+
+plotshape(long  ? low  : na, '', shape.labelup,   location.belowbar, color.green, 0, size=size.tiny, text=buy,  textcolor=color.white)
+plotshape(short ? high : na, '', shape.labeldown, location.abovebar, color.red,   0, size=size.tiny, text=sell, textcolor=color.white)
+plotchar((open-close)<0 ? doji : na, '', cross, location.abovebar, color.black) 
+plotchar((open-close)>0 ? doji : na, '', cross, location.belowbar, color.black) 
+
+//-------------------- Alerting
+
+alertcondition(long,  'Buy',  'go long')
+alertcondition(short, 'Sell', 'go short') 

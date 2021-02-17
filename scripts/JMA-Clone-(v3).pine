@@ -1,0 +1,30 @@
+//@version=3
+// The clone of Jurik Movine average function
+// inspired by LazyBear's solution (https://www.tradingview.com/script/XzcIRUHv-JMA-RSX-Clone-LazyBear/)
+
+// ADDED: power argument
+study("JMA Clone 3", overlay=false)
+
+JSmoothP(src, len, power) =>
+    tmp0 = 0.0, tmp1 = 0.0, tmp2 = 0.0, tmp3 = 0.0, tmp4 = 0.0
+
+    beta = 0.45 * (len - 1) / (0.45 * (len-1) + 2)
+    alpha = pow(beta, power)
+    if na(src[1])
+        tmp4 := src
+	    tmp0 := src
+	    tmp2 := src  
+    tmp0 := (1-alpha) * src + alpha * nz(tmp0[1])
+    tmp1 := (src - tmp0) * (1-beta) + beta * nz(tmp1[1])
+    tmp2 := tmp0 + tmp1
+    tmp3 := (tmp2 - nz(tmp4[1])) * pow((1-alpha), 2) + pow(alpha, 2) * nz(tmp3[1])
+    tmp4 := nz(tmp4[1]) + tmp3  
+    tmp4
+
+jsmooth = input(20)
+len = input(5)
+pow = input(3)
+
+data = JSmoothP(rsi(close, len), jsmooth, pow)
+plot(data, color=navy, linewidth=2)
+hline(75, color=red), hline(25, color=green), hline(50)

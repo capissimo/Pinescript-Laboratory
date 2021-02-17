@@ -1,0 +1,120 @@
+//@version=4
+study("Price Divergence", '', true, precision=2)
+
+// author: capissimo
+// This script implements Price Divergence module using signals from several factors, imcluding
+// RSI, RSI Stochastic, MACD, Volume MA, Accumulation/Distribution, Fisher Transform and CCI
+
+//*** Inputs 
+p              = input(55,    'RSI/Stoch/Volume MA/Acc. Dist./Fisher Transform/CCI Lookback')  
+ymacd          = input(close, 'MACD Source')
+macd_fast      = input(12,    'MACD Fast')
+macd_slow      = input(26,    'MACD Slow')
+macd_smooth    = input(9,     'MACD Smooth Signal')
+prsi_sto_rsi   = input(14,    'RSI Stoch - RSI Length') 
+prsi_sto_stoch = input(14,    'RSI Stoch - Stoch Length')  
+prsi_sto_k     = input(3,     'RSI Stoch - K Length')  
+bchan          = input(false, 'Show Channel?')
+
+//*** Main
+// Factors
+fmacd(y, fast, slow, p) =>
+    fast_ma = sma(y, fast)
+    slow_ma = sma(y, slow)
+    vmacd = fast_ma - slow_ma
+    signal = ema(vmacd, p)
+    hist = vmacd - signal
+
+faccdist(p) => // accdist
+    sma(cum(close==high and close==low or high==low ? 0 : ((2*close-low-high)/(high-low))*volume), p)
+
+fisher(y, p) =>
+    h = highest(y, p)
+    l = lowest(y, p)
+    val = 0.0, val := .66 * ((y - l) / max(h - l, .001) - .5) + .67 * nz(val[1])
+    val1 = val > .99 ? .999 : val < -.99 ? -.999 : val
+    fish = 0.0
+    fish := .5 * log((1 + val1) / max(1 - val1, .001)) + .5 * nz(fish[1])
+
+rsi_stoch(y, prsi, pstoch, pk) =>
+    sma(stoch(y, y, y, pstoch), pk)
+
+// Divergence module
+is_top_fractal(y) =>  y[4] < y[2] and y[3] < y[2] and y[2] > y[1] and y[2] > y[0]
+is_bot_fractal(y) =>  y[4] > y[2] and y[3] > y[2] and y[2] < y[1] and y[2] < y[0]
+fractalize(y)     =>  is_top_fractal(y) ? 1 : is_bot_fractal(y) ? -1 : 0
+    
+divergences(osc_high, osc_low) =>  // factor high and low
+    ftop = fractalize(osc_high) > 0 ? osc_high[2] : na
+    fbot = fractalize(osc_low) < 0 ? osc_low[2] : na
+    
+    high_prev  = valuewhen(ftop, osc_high[2], 0)[2]
+    high_price = valuewhen(ftop, high[2], 0)[2]
+    low_prev   = valuewhen(fbot, osc_low[2], 0)[2] 
+    low_price  = valuewhen(fbot, low[2], 0)[2]
+    
+    reg_bearish_div = ftop and high[2] > high_price and osc_high[2] < high_prev
+    hid_bearish_div = ftop and high[2] < high_price and osc_high[2] > high_prev
+    reg_bullish_div = fbot and low[2] < low_price and osc_low[2] > low_prev
+    hid_bullish_div = fbot and low[2] > low_price and osc_low[2] < low_prev
+    [ftop, fbot, reg_bearish_div, hid_bearish_div, reg_bullish_div, hid_bullish_div]
+
+f1 =rsi(high, p),                                              f2 =rsi(low, p)
+f3 =rsi_stoch(high, prsi_sto_rsi, prsi_sto_stoch, prsi_sto_k), f4 =rsi_stoch(low, prsi_sto_rsi, prsi_sto_stoch, prsi_sto_k)
+f5 =fmacd(ymacd, macd_fast, macd_slow, macd_smooth),           f6 =fmacd(ymacd, macd_fast, macd_slow, macd_smooth)
+f7 =stoch(close, high, low, p),                                f8 =stoch(close, high, low, p)
+f9 =sma(volume, p),                                            f10=sma(volume, p)
+f11=faccdist(p),                                               f12=faccdist(p)
+f13=fisher(high, p),                                           f14=fisher(low, p)
+f15=cci(high, p),                                              f16=cci(low, p)
+
+[ftop1, fbot1, rbe1, hid_bear_div1, rbu1, hid_bull_div1] = divergences(f1, f2)
+[ftop2, fbot2, rbe2, hid_bear_div2, rbu2, hid_bull_div2] = divergences(f3, f4)
+[ftop3, fbot3, rbe3, hid_bear_div3, rbu3, hid_bull_div3] = divergences(f5, f6)
+[ftop4, fbot4, rbe4, hid_bear_div4, rbu4, hid_bull_div4] = divergences(f7, f8)
+[ftop5, fbot5, rbe5, hid_bear_div5, rbu5, hid_bull_div5] = divergences(f9, f10)
+[ftop6, fbot6, rbe6, hid_bear_div6, rbu6, hid_bull_div6] = divergences(f11, f12)
+[ftop7, fbot7, rbe7, hid_bear_div7, rbu7, hid_bull_div7] = divergences(f13, f14)
+[ftop8, fbot8, rbe8, hid_bear_div8, rbu8, hid_bull_div8] = divergences(f15, f16)
+
+silver = color.silver, red = color.fuchsia, green = color.lime, circles = plot.style_circles
+
+plot(ftop1 ? high[2] : na, color=rbe1 or hid_bear_div1 ? red : not bchan ? na : silver, offset=-2) // 'H F'
+plot(fbot1 ? low[2]  : na, color=rbu1 or hid_bull_div1 ? green : not bchan ? na : silver, offset=-2)   // 'L F'
+plot(ftop1 ? high[2] : na, style=circles, color=rbe1 or hid_bear_div1 ? red : not bchan ? na : silver, linewidth=3, offset=-2) // 'H D'
+plot(fbot1 ? low[2]  : na, style=circles, color=rbu1 or hid_bull_div1 ? green : not bchan ? na : silver, linewidth=3, offset=-2) // 'L D'
+
+plot(ftop2 ? high[2] : na, color=rbe2 or hid_bear_div2 ? red : not bchan ? na : silver, offset=-2)
+plot(fbot2 ? low[2]  : na, color=rbu2 or hid_bull_div2 ? green : not bchan ? na : silver, offset=-2)
+plot(ftop2 ? high[2] : na, style=circles, color=rbe2 or hid_bear_div2 ? red : not bchan ? na : silver, linewidth=3, offset=-2)
+plot(fbot2 ? low[2]  : na, style=circles, color=rbu2 or hid_bull_div2 ? green : not bchan ? na : silver, linewidth=3, offset=-2)
+
+plot(ftop3 ? high[2] : na, color=rbe3 or hid_bear_div3 ? red : not bchan ? na : silver, offset=-2)
+plot(fbot3 ? low[2]  : na, color=rbu3 or hid_bull_div3 ? green : not bchan ? na : silver, offset=-2)
+plot(ftop3 ? high[2] : na, style=circles, color=rbe3 or hid_bear_div3 ? red : not bchan ? na : silver, linewidth=3, offset=-2)
+plot(fbot3 ? low[2]  : na, style=circles, color=rbu3 or hid_bull_div3 ? green : not bchan ? na : silver, linewidth=3, offset=-2)
+
+plot(ftop4 ? high[2] : na, color=rbe4 or hid_bear_div4 ? red : not bchan ? na : silver, offset=-2)
+plot(fbot4 ? low[2]  : na, color=rbu4 or hid_bull_div4 ? green : not bchan ? na : silver, offset=-2)
+plot(ftop4 ? high[2] : na, style=circles, color=rbe4 or hid_bear_div4 ? red : not bchan ? na : silver, linewidth=3, offset=-2)
+plot(fbot4 ? low[2]  : na, style=circles, color=rbu4 or hid_bull_div4 ? green : not bchan ? na : silver, linewidth=3, offset=-2)
+
+plot(ftop5 ? high[2] : na, color=rbe5 or hid_bear_div5 ? red : not bchan ? na : silver, offset=-2)
+plot(fbot5 ? low[2]  : na, color=rbu5 or hid_bull_div5 ? green : not bchan ? na : silver, offset=-2)
+plot(ftop5 ? high[2] : na, style=circles, color=rbe5 or hid_bear_div5 ? red : not bchan ? na : silver, linewidth=3, offset=-2)
+plot(fbot5 ? low[2]  : na, style=circles, color=rbu5 or hid_bull_div5 ? green : not bchan ? na : silver, linewidth=3, offset=-2)
+
+plot(ftop6 ? high[2] : na, color=rbe6 or hid_bear_div6 ? red : not bchan ? na : silver, offset=-2)
+plot(fbot6 ? low[2]  : na, color=rbu6 or hid_bull_div6 ? green : not bchan ? na : silver, offset=-2)
+plot(ftop6 ? high[2] : na, style=circles, color=rbe6 or hid_bear_div6 ? red : not bchan ? na : silver, linewidth=3, offset=-2)
+plot(fbot6 ? low[2]  : na, style=circles, color=rbu6 or hid_bull_div6 ? green : not bchan ? na : silver, linewidth=3, offset=-2)
+
+plot(ftop7 ? high[2] : na, color=rbe7 or hid_bear_div7 ? red : not bchan ? na : silver, offset=-2)
+plot(fbot7 ? low[2]  : na, color=rbu7 or hid_bull_div7 ? green : not bchan ? na : silver, offset=-2)
+plot(ftop7 ? high[2] : na, style=circles, color=rbe7 or hid_bear_div7 ? red : not bchan ? na : silver, linewidth=3, offset=-2)
+plot(fbot7 ? low[2]  : na, style=circles, color=rbu7 or hid_bull_div7 ? green : not bchan ? na : silver, linewidth=3, offset=-2)
+
+plot(ftop8 ? high[2] : na, color=rbe8 or hid_bear_div8 ? red : not bchan ? na : silver, offset=-2)
+plot(fbot8 ? low[2]  : na, color=rbu8 or hid_bull_div8 ? green : not bchan ? na : silver, offset=-2)
+plot(ftop8 ? high[2] : na, style=circles, color=rbe8 or hid_bear_div8 ? red : not bchan ? na : silver, linewidth=3, offset=-2)
+plot(fbot8 ? low[2]  : na, style=circles, color=rbu8 or hid_bull_div8 ? green : not bchan ? na : silver, linewidth=3, offset=-2)

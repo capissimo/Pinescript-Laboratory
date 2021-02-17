@@ -1,0 +1,97 @@
+//@version=4
+strategy("Candlestick Patterns Strategy (revisited)", '', true, 
+         max_bars_back=500, default_qty_value=1000, initial_capital=100000, currency=currency.USD)
+         
+// author: DanyChe
+// ported to PS4: MRKCHAMPION
+// modified: capissimo
+// This strategy is used as a benchmark to see how it compares with other strategies posted by me recently.
+// In all, the below collection of candlestick patterns appears to be one of the best among the ones posted here, imho.
+
+//*** Inputs
+OnEngulfing            = input(true, "Engulfing")
+OnHarami               = input(true, "Harami")
+OnPiercingLine         = input(true, "Piercing Line / Dark Cloud Cover")
+OnMorningStar          = input(true, "Morning Star / Evening Star ")
+OnBeltHold             = input(true, "Belt Hold")
+OnThreeWhiteSoldiers   = input(true, "Three White Soldiers / Three Black Crows")
+OnThreeStarsInTheSouth = input(true, "Three Stars in the South")
+OnStickSandwich        = input(true, "Stick Sandwich")
+OnMeetingLine          = input(true, "Meeting Line")
+OnKicking              = input(true, "Kicking")
+OnLadderBottom         = input(true, "Ladder Bottom")
+
+//*** Main - Candlestick Patterns
+//Engulfing 
+bullish_engulfing = high[0]>high[1] and low[0]<low[1] and open[0]<open[1] and close[0]>close[1] and close[0]>open[0] and close[1]<close[2] and close[0]>open[1] ? OnEngulfing : na
+bearish_engulfing = high[0]>high[1] and low[0]<low[1] and open[0]>open[1] and close[0]<close[1] and close[0]<open[0] and close[1]>close[2] and close[0]<open[1] ? OnEngulfing : na
+//Harami
+bullish_harami =  open[1]>close[1] and close[1]<close[2] and open[0]>close[1] and open[0]<open[1] and close[0]>close[1] and close[0]<open[1] and high[0]<high[1] and low[0]>low[1] and close[0]>=open[0] ? OnHarami : na
+bearish_harami =   open[1]<close[1] and close[1]>close[2] and open[0]<close[1] and open[0]>open[1] and close[0]<close[1] and close[0]>open[1] and high[0]<high[1] and low[0]>low[1] and close[0]<=open[0] ? OnHarami : na
+//Piercing Line/Dark Cloud Cover 
+piercing_line = close[2]>close[1] and open[0]<low[1] and close[0]>avg(open[1],close[1]) and close[0]<open[1] ? OnPiercingLine : na
+dark_cloud_cover = close[2]<close[1] and open[0]>high[1] and close[0]<avg(open[1],close[1]) and close[0]>open[1] ? OnPiercingLine : na
+//Morning Star/Evening Star
+morning_star = close[3]>close[2] and close[2]<open[2] and open[1]<close[2] and close[1]<close[2] and open[0]>open[1] and open[0]>close[1] and close[0]>close[2] and open[2]-close[2]>close[0]-open[0] ? OnMorningStar : na
+evening_star = close[3]<close[2] and close[2]>open[2] and open[1]>close[2] and close[1]>close[2] and open[0]<open[1] and open[0]<close[1] and close[0]<close[2] and close[2]-open[2]>open[0]-close[0] ? OnMorningStar : na
+//Belt Hold
+bullish_belt_hold = close[1]<open[1] and low[1]>open[0] and close[1]>open[0] and open[0]==low[0] and close[0]>avg(close[0],open[0]) ? OnBeltHold :na
+bearish_belt_hold =  close[1]>open[1] and high[1]<open[0] and close[1]<open[0] and open[0]==high[0] and close[0]<avg(close[0],open[0]) ? OnBeltHold :na
+//Three White Soldiers/Three Black Crows 
+three_white_soldiers = close[3]<open[3] and open[2]<close[3] and close[2]>avg(close[2],open[2]) and open[1]>open[2] and open[1]<close[2] and close[1]>avg(close[1],open[1]) and open[0]>open[1] and open[0]<close[1] and close[0]>avg(close[0],open[0]) and high[1]>high[2] and high[0]>high[1] ? OnThreeWhiteSoldiers : na
+three_black_crows =  close[3]>open[3] and open[2]>close[3] and close[2]<avg(close[2],open[2]) and open[1]<open[2] and open[1]>close[2] and close[1]<avg(close[1],open[1]) and open[0]<open[1] and open[0]>close[1] and close[0]<avg(close[0],open[0]) and low[1]<low[2] and low[0]<low[1] ? OnThreeWhiteSoldiers : na
+//Three Stars in the South
+three_stars_in_the_south = open[3]>close[3] and open[2]>close[2] and open[2]==high[2] and open[1]>close[1] and open[1]<open[2] and open[1]>close[2] and low[1]>low[2] and open[1]==high[1] and open[0]>close[0] and open[0]<open[1] and open[0]>close[1] and open[0]==high[0] and close[0]==low[0] and close[0]>=low[1] ? OnThreeStarsInTheSouth : na
+//Stick Sandwich
+stick_sandwich = open[2]>close[2] and open[1]>close[2] and open[1]<close[1] and open[0]>close[1] and open[0]>close[0] and close[0]==close[2] ? OnStickSandwich : na
+//Meeting Line 
+bullish_ml = open[2]>close[2] and open[1]>close[1] and close[1]==close[0] and open[0]<close[0] and open[1]>=high[0] ? OnMeetingLine : na
+bearish_ml = open[2]<close[2] and open[1]<close[1] and close[1]==close[0] and open[0]>close[0] and open[1]<=low[0] ? OnMeetingLine : na
+//Kicking 
+bullish_kicking =  open[1]>close[1] and open[1]==high[1] and close[1]==low[1] and open[0]>open[1] and open[0]==low[0] and close[0]==high[0] and close[0]-open[0]>open[1]-close[1] ? OnKicking : na
+bearish_kicking = open[1]<close[1] and open[1]==low[1] and close[1]==high[1] and open[0]<open[1] and open[0]==high[0] and close[0]==low[0] and open[0]-close[0]>close[1]-open[1] ? OnKicking : na
+//Ladder Bottom
+ladder_bottom = open[4]>close[4] and open[3]>close[3] and open[3]<open[4] and open[2]>close[2] and open[2]<open[3] and open[1]>close[1] and open[1]<open[2] and open[0]<close[0] and open[0]>open[1] and low[4]>low[3] and low[3]>low[2] and low[2]>low[1] ? OnLadderBottom : na
+
+red = color.red, green = color.lime, white = color.white
+plotshape(bullish_engulfing, text='Engulfing', style=shape.labelup, location=location.belowbar, color=green, textcolor=white, transp=0)
+plotshape(bearish_engulfing,text='Engulfing', style=shape.labeldown, location=location.abovebar, color=red, textcolor=white, transp=0)
+plotshape(bullish_harami,text='Harami', style=shape.labelup, location=location.belowbar, color=green, textcolor=white, transp=0)
+plotshape(bearish_harami,text='Harami', style=shape.labeldown, location=location.abovebar, color=red, textcolor=white, transp=0)
+plotshape(piercing_line,text='Piercing Line', style=shape.labelup, location=location.belowbar, color=green, textcolor=white, transp=0)
+plotshape(dark_cloud_cover,text='Dark Cloud Cover', style=shape.labeldown, location=location.abovebar, color=red, textcolor=white, transp=0)
+plotshape(morning_star,text='Morning Star', style=shape.labelup, location=location.belowbar, color=green, textcolor=white, transp=0)
+plotshape(evening_star,text='Evening Star', style=shape.labeldown, location=location.abovebar, color=red, textcolor=white, transp=0)
+plotshape(bullish_belt_hold,text='Belt Hold', style=shape.labelup, location=location.belowbar, color=green, textcolor=white, transp=0)    
+plotshape(bearish_belt_hold,text='Belt Hold', style=shape.labeldown, location=location.abovebar, color=red, textcolor=white, transp=0)
+plotshape(three_white_soldiers,text='Three White Soldiers', style=shape.labelup, location=location.belowbar, color=green, textcolor=white, transp=0)
+plotshape(three_black_crows,text='Three Black Crows', style=shape.labeldown, location=location.abovebar, color=red, textcolor=white, transp=0)
+plotshape(three_stars_in_the_south,text='3 Stars South', style=shape.labelup, location=location.belowbar, color=green, textcolor=white, transp=0)
+plotshape(stick_sandwich,text='Stick Sandwich', style=shape.labelup, location=location.belowbar, color=green, textcolor=white, transp=0)
+plotshape(bullish_ml,text='Meeting Line', style=shape.labelup, location=location.belowbar, color=green, textcolor=white, transp=0)
+plotshape(bearish_ml,text='Meeting Line', style=shape.labeldown, location=location.abovebar, color=red, textcolor=white, transp=0)
+plotshape(bullish_kicking,text='Kicking', style=shape.labelup, location=location.belowbar, color=green, textcolor=white, transp=0)
+plotshape(bearish_kicking,text='Kicking', style=shape.labeldown, location=location.abovebar, color=red, textcolor=white, transp=0)
+plotshape(ladder_bottom,text='Ladder Bottom', style=shape.labelup, location=location.belowbar, color=green, textcolor=white, transp=0)
+
+long  = bullish_engulfing or bullish_harami or piercing_line or morning_star or bullish_belt_hold or three_white_soldiers or three_stars_in_the_south or stick_sandwich or bullish_ml or bullish_kicking or ladder_bottom
+short = bearish_engulfing or bearish_harami or dark_cloud_cover or evening_star or bearish_belt_hold or three_black_crows or bearish_ml or bearish_kicking
+
+//*** Strategy
+useStrat = input(true, "Use Strategy Setup")
+useStop  = input(true, "Use Trailing Stop?")
+slPoints = input(1,    "Stop Loss Trail Points", minval=1)
+slOffset = input(1,    "Stop Loss Trail Offset", minval=1)
+yr       = input(2019, "Starting backtest year", minval=2000)
+mn       = input(8,    "Starting backtest month", minval=1, maxval=12)
+dy       = input(1,    "Starting backtest day", minval=1, maxval=31)
+
+if useStrat and year >= yr and month >= mn and dayofmonth >= dy
+    strategy.entry("L", true, 1, when=long)
+    strategy.entry("S", false, 1, when=short) 
+    if (useStop) 
+        strategy.exit("L", from_entry="L", trail_points=slPoints, trail_offset=slOffset)
+        strategy.exit("S", from_entry="S", trail_points=slPoints, trail_offset=slOffset)
+
+alertcondition(long,  title='Buy',  message='go long')
+alertcondition(short, title='Sell', message='go short')  

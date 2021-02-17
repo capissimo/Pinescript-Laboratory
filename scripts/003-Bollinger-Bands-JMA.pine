@@ -1,0 +1,42 @@
+//@version=3
+// Bollinger Bands and MA crossovers, all based on Jurik MA
+strategy("Bollinger Bands JMA", overlay=true)
+
+source = input(close)
+length = input(20, minval=1)
+mult = input(2.0, minval=0.001, maxval=50)
+lenfast = input(5, minval=2)
+lenslow = input(20, minval=2)
+pow = input(3)
+show_mid = input(true)
+show_fast = input(true)
+show_slow = input(true)
+
+// Jurik MA with power arg
+jmap(src, len, p) =>
+    beta = 0.45*(len-1)/(0.45*(len-1)+2)
+    alpha = pow(beta, p)
+    L0 = 0.0, L1 = 0.0, L2 = 0.0, L3 = 0.0, L4 = 0.0
+    L0 := (1-alpha)*src + alpha*nz(L0[1])
+    L1 := (src - L0[0])*(1-beta) + beta*nz(L1[1])
+    L2 := L0[0] + L1[0]
+    L3 := (L2[0] - nz(L4[1]))*((1-alpha)*(1-alpha)) + (alpha*alpha)*nz(L3[1])
+    L4 := nz(L4[1]) + L3[0]
+    L4
+
+basis = jmap(source, length, 1)
+dev = mult * stdev(source, length)
+
+upper = basis + dev
+lower = basis - dev
+
+jmafast = jmap(source, lenfast, pow)
+jmaslow = jmap(source, lenslow, pow)
+
+plot(show_fast ? jmafast : na, color=blue, linewidth=2, title="JMAfast")
+plot(show_slow ? jmaslow : na, color=orange, linewidth=2, title="JMAslow")
+
+plot(show_mid ? basis : na, color=maroon, linewidth=1)
+p1=plot(upper, color=blue, linewidth=1, transp=30)
+p2=plot(lower, color=blue, linewidth=1, transp=30)
+fill(p1, p2, color=blue, transp=95)

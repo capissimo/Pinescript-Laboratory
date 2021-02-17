@@ -1,0 +1,81 @@
+// This source code is subject to the terms of the Mozilla Public License 2.0 at https://mozilla.org/MPL/2.0/
+// © capissimo
+
+//@version=4
+study("Support and Resistance Strategy", '', true)
+// strategy("Support and Resistance Strategy", '', true)
+
+// Support and resistance Strategy (FX and Crypto)
+// Description: This strategy uses “support” S and “resistance” R levels, which can be computed
+// using the “pivot point” (a.k.a. the “center”) C as follows:
+// C = (PH + PL + PC) / 3
+// R = 2 × C - PL 
+// S = 2 × C - PH 
+// Here PH, PL and PC are the previous day’s high, low and closing prices. 
+// One way to define a trading signal is as follows (as above, P is the current price):
+// Signal:
+// Establish long position if P > C
+// Liquidate long position if P ≥ R
+// Establish short position if P < C
+// Liquidate short position if P ≤ S
+
+// Other definitions of the pivot point (e.g., using the current trading day’s open price) and
+// higher/lower support/resistance levels exist.
+
+// Style tags: Trend Following, Trend Analysis
+// Asset class: Equities, Futures, ETFs, Currencies and Commodities
+// Dataset: FX Minutes/Hours/Days
+
+//-------------------- Global Variables
+
+var BUY = 1, var SELL = -1
+
+//-------------------- Custom Functions
+
+cGreen(g) => g>9?#006400:g>8?#1A741A:g>7?#338333:g>6?#4D934D:g>5?#66A266:g>4?#80B280:g>3?#99C199:g>2?#B3D1B3:g>1?#CCE0CC:#E6F0E6
+cRed(g)   => g>9?#E00000:g>8?#E31A1A:g>7?#E63333:g>6?#E94D4D:g>5?#EC6666:g>4?#F08080:g>3?#F39999:g>2?#F6B3B3:g>1?#F9CCCC:#FCE6E6
+
+//-------------------- Logic
+
+C = hlc3[1]
+R = 2 * C - low[1]
+S = 2 * C - high[1]
+
+signal = 0
+signal := close > C ? BUY : close < C ? SELL : nz(signal[1])  
+
+startLongTrade  = change(signal) and signal==BUY 
+startShortTrade = change(signal) and signal==SELL
+endLongTrade    = close >= R 
+endShortTrade   = close <= S 
+
+//-------------------- Rendering
+
+plot(startLongTrade  ? low  : na, style=plot.style_circles, color=cGreen(10), title='Buy',      linewidth=3)
+plot(startShortTrade ? high : na, style=plot.style_circles, color=cRed(10),   title='Sell',     linewidth=3)
+plot(endLongTrade    ? high : na, style=plot.style_cross,   color=cGreen(6),  title='StopBuy',  linewidth=3)
+plot(endShortTrade   ? low  : na, style=plot.style_cross,   color=cRed(6),    title='StopSell', linewidth=3)
+
+//-------------------- Alerting
+
+// alertcondition(startLongTrade,  title='Buy',  message='Go long!')
+// alertcondition(startShortTrade, title='Sell', message='Go short!') 
+alertcondition(startLongTrade or startShortTrade, title='Alert', message='Deal Time!')
+
+//-------------------- Backtesting
+
+// startYear   = input(2020, 'Backtest Start Year',  minval=2000)
+// startMonth  = input(6,    'Backtest Start Month', minval=1, maxval=12)
+// startDay    = input(12,   'Backtest Start Day',   minval=1, maxval=31)
+// periodStart = timestamp(startYear, startMonth, startDay, 0, 0)
+
+// stopYear    = 9999  // input(9999, 'Backtest Stop Year',  minval=2000)
+// stopMonth   = 12    // input(12,   'Backtest Stop Month', minval=1, maxval=12)
+// stopDay     = 31    // input(31,   'Backtest Stop Day',   minval=1, maxval=31)
+// periodStop  = timestamp(stopYear, stopMonth, stopDay, 0, 0)
+
+// if time >= periodStart and time <= periodStop
+//     strategy.entry("Long", 1,  when=startLongTrade)
+//     strategy.close("Long",     when=endLongTrade)
+//     strategy.entry("Short", 0, when=startShortTrade)
+//     strategy.close("Short",    when=startShortTrade)

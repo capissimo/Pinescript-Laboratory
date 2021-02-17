@@ -1,0 +1,56 @@
+//@version=4
+strategy("HMA-Kahlman Strategy with Pivoting", "HMA-Kahlman-Pivot Strat", true, precision=2)
+
+// Tested with EURUSD on 5M time frame this strategy leverages the same simplified strategy setup.
+
+//*** Inputs
+price     = input(close, "Price Data")
+p         = input(13,    "HMA Lookback", minval=1)
+gain      = input(.9,    "Gain", minval=.0001, step=.0001)
+k         = input(true,  "Use Kahlman")
+usep      = input(true,  "Use Pivoting?")
+span      = input(4,     "Pivoting Span (3)", minval=1)
+
+useStrat  = input(true,  "Use Strategy Setup")
+useStop   = input(true,  "Use Trailing Stop?")
+slPoints  = input(1,     "Stop Loss Trail Points",  minval=1)
+slOffset  = input(1,     "Stop Loss Trail Offset",  minval=1)
+yr        = input(2019,  "Starting backtest year",  minval=2000)
+mn        = input(8,     "Starting backtest month", minval=1, maxval=12)
+dy        = input(1,     "Starting backtest day",   minval=1, maxval=31)
+
+//*** Functions
+hma(src, length) => wma((2 * wma(src, length / 2)) - wma(src, length), round(sqrt(length)))
+hma3() => pp = p/2, wma(wma(close, pp/3)*3 - wma(close, pp/2) - wma(close,pp), pp)
+
+kahlman(x, g) =>
+    kf = 0.0
+    dk = x - nz(kf[1], x)
+    smooth = nz(kf[1],x)+dk*sqrt(g*2)
+    velo = 0.0
+    velo := nz(velo[1],0) + (g*dk)
+    kf := smooth+velo
+  
+//*** Main
+a = k ? kahlman(hma(price, p), gain) : hma(price, p)
+b = k ? kahlman(hma3(), gain) : hma3()
+maavg   = avg(a, b)
+long    = usep ? falling(maavg[1], span) and not falling(maavg, span) : crossover(maavg, price)
+short   = usep ? rising(maavg[1], span) and not rising(maavg, span) : crossunder(maavg, price)
+
+p1 = plot(a, color=b > a ? color.lime : color.red, linewidth=1, transp=75)
+p2 = plot(b, color=b > a ? color.lime : color.red, linewidth=1, transp=75)
+fill(p1, p2, color=b > a ? color.lime : color.red, transp=55)
+plotshape(useStrat ? na : long  ? low:  na, style=shape.labelup, location=location.belowbar, color=color.lime, text="B", textcolor=color.white, transp=0, size=size.tiny)
+plotshape(useStrat ? na : short ? high: na, style=shape.labeldown, location=location.abovebar, color=color.red, text="S", textcolor=color.white, transp=0, size=size.tiny)
+
+//*** Strategy
+if useStrat and year >= yr and month >= mn and dayofmonth >= dy
+    strategy.entry("L", true, 1, when=long)
+    strategy.entry("S", false, 1, when=short) 
+    if (useStop) 
+        strategy.exit("L", from_entry="L", trail_points=slPoints, trail_offset=slOffset)
+        strategy.exit("S", from_entry="S", trail_points=slPoints, trail_offset=slOffset)
+
+alertcondition(long,  title='Buy',  message='go long')
+alertcondition(short, title='Sell', message='go short')  

@@ -1,0 +1,40 @@
+//@version=4
+study("Hull-Kahlman Trend with Alerts", '', true)
+
+// author: capissimo$ thanks to all original authors and contributors)
+// This update is meant for those who do not want to dig into the code.
+// Also:
+// - modified hma3 function
+// - edited for readability
+// - added alerting
+
+src       = input(hl2,   "Price Data")
+length    = input(13,    "Lookback Window (originally = 24)")
+showcross = input(true,  "Show labels?")
+k         = input(true,  "Use Kahlman Smoother?")
+gain      = input(1.,    "Gain for the Smoother", step=.001)
+o         = input(true,  "Offset by 1 candle?")
+
+hma(x, p)  => wma((2 * wma(x, p / 2)) - wma(x, p), round(sqrt(p)))
+hma3(x, p) => per = p/2, wma(wma(x, per/3)*3 - wma(x, per/2) - wma(x, per), per)
+
+kahlman(x, g) =>
+    kf = 0.0
+    dk = x - nz(kf[1], x)
+    smooth = nz(kf[1],x)+dk*sqrt(g*2)
+    velo = 0.0
+    velo := nz(velo[1],0) + (g*dk)
+    kf := smooth+velo
+  
+a = k ? kahlman(hma(src, length), gain) : hma(src, length)
+b = k ? kahlman(hma3(close, length), gain) : hma3(close, length)
+c = b > a ? color.lime : color.red
+long  = b > a and b[1] < a[1]
+short = a > b and a[1] < b[1]
+
+fill(plot(a,color=c,linewidth=1,transp=75), plot(b,color=c,linewidth=1,transp=75), color=c, transp=55)
+plotshape(showcross and long  ? a : na, location=location.belowbar, style=shape.labelup, color=color.green, size=size.tiny, text="B", textcolor=color.white, transp=0, offset=o?-1:0)
+plotshape(showcross and short ? a : na, location=location.abovebar, style=shape.labeldown, color=color.red, size=size.tiny, text="S", textcolor=color.white, transp=0, offset=o?-1:0)
+
+alertcondition(long,  title='Buy',  message='go long')
+alertcondition(short, title='Sell', message='go short') 

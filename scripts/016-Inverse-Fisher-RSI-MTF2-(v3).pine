@@ -1,0 +1,41 @@
+//@version=3
+study("Inverse Fisher RSI-MTF2 (v.3)", "INRSIM3", false)
+
+// Rebrush of Rafael Zioni's Inverse Fisher RSI-MTF2
+// See: https://ru.tradingview.com/script/XDJWADe9-Inverse-Fisher-RSI-MTF2-alerts/
+// The solution is to put the code into indicator section of the chart and look closely at what is going on.
+// See my remarks below
+
+//Inputs
+RSI_pm = input(5, title="RSI Main Period",minval=2)
+RSI_ps = input(1, title="RSI Smooth Period",minval=0)
+
+//Functions
+IF(input) => (exp(2*input)-1) / (exp(2*input)+1)
+
+//RSI Calculation
+raw_RSI=0.1*(rsi(close,RSI_pm)-50)
+wma_RSI=wma(raw_RSI,RSI_ps)*100
+IF_RSI = IF(wma_RSI)
+
+resCustom = input("03", title="Time frame", options=["01", "02", "03", "05", "07", "10", "15", "30", "45", "60"])  // custom tfs !!
+value = security(tickerid, resCustom, IF_RSI[1], barmerge.gaps_off, barmerge.lookahead_on)  // use this to avoid repaints
+//value = security(tickerid, resCustom, IF_RSI)
+threshold1 = value < -0.8 ? 1 : 0
+threshold2 = 0.8
+
+var = variance(value, RSI_pm)   // can be replaced with stdev(..), also can play with the lookback window instead of RSI_pm
+buy  = crossover(value, threshold2)
+sell = crossunder(value, threshold1)
+
+// Look at this lime line. If a signal is fired, but the value's variance is low, wait until it becomes higher and then enter.
+// Also can be integrated into the buy/sell conditions as the filter
+plot(var, RSI_pm, color=lime)  
+plot(value)
+plot(threshold1, color=black)
+plot(threshold2, color=orange)
+plot(sell ? value : na, title="sell", style=circles, color=red, transp=0, linewidth=3, transp=30)
+plot(buy ? value : na,  title="buy", style=circles, color=green, transp=0, linewidth=3, transp=30)
+
+alertcondition(buy, title='buy', message='go long')
+alertcondition(sell, title='sell', message='go  short')

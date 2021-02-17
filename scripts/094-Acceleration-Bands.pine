@@ -1,0 +1,37 @@
+// This source code is subject to the terms of the Mozilla Public License 2.0 at https://mozilla.org/MPL/2.0/
+// © capissimo
+
+//@version=4
+study("Acceleration Bands", '', true)
+
+// Acceleration Bands 
+
+// Description:
+// Acceleration Bands serve as a trading envelope that factor in 
+// an assets typical volatility over standard settings of 20 or 80 bars. 
+// They can be used across any time period, though Headley prefers to use 
+// them most across weekly and monthly timeframes as breakout indicators outside 
+// these bands. 
+
+// Using the shorter time frames can define likely support and resistance levels 
+// at the lower and upper Acceleration Bands.
+
+// Entry is usually made at the breakout point. Once the price closes back within 
+// the Acceleration Bands, this is taken as a signal that the acceleration period is over 
+// and it’s best to close out the trade.
+
+//-------------------- Inputs
+
+p = input(80, 'Lookback Window (20,80)', minval=2)
+
+//-------------------- Logic
+
+upper = sma(high * ( 1 + 4 * (high - low) / (high + low)), p)
+ma    = sma(close, p)
+lower = sma(low * (1 - 4 * (high - low)/ (high + low)), p)
+
+//-------------------- Rendering
+
+plot(upper, color=color.gray)
+plot(lower, color=color.gray)
+plot(ma,    color=color.orange)

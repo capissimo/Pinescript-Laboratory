@@ -1,0 +1,46 @@
+//@version=3
+study("LogReg", '', true)
+
+// Logistic Regression
+
+//
+// Functions
+//
+dot(v, w, p) => sum(v * w, p)
+
+sigmoid(z) => 1 / (1 + exp(-z))
+
+logistic_regression(X, Y, p, W, lr, steps) => 
+    w = 0.0, loss = 0.0
+    for i=0 to steps
+        hypothesis = sigmoid(dot(X, W, p))  // prediction
+
+        loss := -1 / p * (dot(dot(Y, log(hypothesis) + (1 - Y), p), log(1 - hypothesis), p))  // loss function, gradient, training
+        gradient = 1 / p * (dot(X, hypothesis - Y, p))
+        w := w - lr * gradient
+    
+    [loss, sigmoid(dot(X, w, p))]  // current loss & prediction
+
+scaleMinimax(X, p, min, max) => 
+    hi = highest(X, p), lo = lowest(X, p)
+    (max - min) * (X - lo)/(hi - lo) + min
+
+//
+// Inputs
+//
+X = input(close)
+p = input(3)
+
+//
+// Main
+//
+Y = log(abs(pow(X, 2) - 1) + .5)  // generate dataset
+W = 0.0
+
+[x, y] = logistic_regression(X, Y, p, W, 0.001, 100) 
+
+x_scaled = scaleMinimax(x, 1000, lowest(X, 1000), highest(X, 1000))
+y_scaled = scaleMinimax(y, 1000, lowest(X, 1000), highest(X, 1000))
+
+plot(x_scaled, linewidth=3)
+plot(y_scaled, linewidth=3, color=lime)

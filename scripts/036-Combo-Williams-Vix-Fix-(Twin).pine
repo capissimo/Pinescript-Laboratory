@@ -1,0 +1,76 @@
+//@version=4
+study("Combo Williams Vix Fix (Twin)", '', false, precision=2)
+
+// Author: capissimo
+// This is a very powerful Williams' Vix Fix indicator.
+// My implementation of this wonderful indicator features both up and down movements.
+// Both up & down flavors have two versions (fields tp and tp2, each having two values).
+// Color can be reversed as desired (rev).
+// By default colors show continuation, reversed colors show reversion (as intended originally).
+
+//*** Inputs
+tp   = input(1,     "VixFix UP [1,2]", minval=1, maxval=2)
+tp2  = input(1,     "VixFix DN [1,2]", minval=1, maxval=2)
+rev  = input(false, "Reverse Colors")
+pd   = input(22,    "LookBack Period Standard Deviation High/Low", minval=1)
+bbl  = input(20,    "Bolinger Band Length", minval=1)
+mult = input(2.0,   "Bollinger Band Standard Deviation Up/Dn", minval=1., maxval=5., step=.1)
+p    = input(60,    "LookBack", minval=1)
+lb   = input(50,    "Look Back Period Percentile High/Low", minval=1)
+ph   = input(.85,   "Highest Percentile - 0.90=90%, 0.95=95%, 0.99=99%", minval=.5, maxval=1.)
+pl   = input(1.01,  "Lowest Percentile - 1.10=90%, 1.05=95%, 1.01=99%", minval=1., maxval=1.2)
+hp   = input(false, "Show High Range - Based on Percentile and LookBack Period?")
+sd   = input(false, "Show Standard Deviation Line?")
+hp2  = input(false, "Show Low Range - Based on Percentile and LookBack Period?")
+sd2  = input(false, "Show Standard Deviation Line?")
+
+//*** Functions
+scaleMinimax(X, p, min, max) => 
+    hi = highest(X, p), lo = lowest(X, p)
+    (max - min) * (X - lo)/(hi - lo) + min
+
+//*** Main
+prix  = scaleMinimax(close, p, 0, 1)
+prixn = 1 - prix
+neg   = 1 - scaleMinimax(high, p, 0, 1)
+hi    = scaleMinimax(high, p, 0, 1)
+lo    = scaleMinimax(low, p, 0, 1)
+
+up1   = (highest(prix, pd) - lo)/highest(prix, pd)
+up2   = (highest(prix, pd) - hi)/highest(prix, pd)
+dn1   = (highest(prixn, pd) - neg)/highest(prixn, pd)
+dn2   = scaleMinimax((high - lowest(close, pd))/lowest(close, pd), p, 0, 1) 
+wvf   = tp==1 ? up1 : up2
+wvfr  = tp2==1 ? dn1 : dn2
+
+red   = rev ? color.new(color.lime, 10) : color.new(color.fuchsia, 10)
+green = rev ? color.new(color.fuchsia, 10) : color.new(color.lime, 10) 
+
+sDev      = mult * stdev(wvf, bbl)
+midLine   = sma(wvf, bbl)
+lowerBand = midLine - sDev
+upperBand = midLine + sDev
+rangeHigh = (highest(wvf, lb)) * ph
+rangeLow  = (lowest(wvf, lb)) * pl
+col = wvf >= upperBand or wvf >= rangeHigh ? red : color.new(color.gray, 70)
+
+sDev2      = mult * stdev(wvfr, bbl)
+midLine2   = sma(wvfr, bbl)
+lowerBand2 = midLine2 - sDev2
+upperBand2 = midLine2 + sDev2
+rangeHigh2 = (highest(wvfr, lb)) * ph
+rangeLow2  = (lowest(wvfr, lb)) * pl
+col2 = wvfr >= upperBand2 or wvfr >= rangeHigh2 ? green : color.new(color.gray, 70)
+
+plot(wvfr, "WVixFix Rev", style=plot.style_histogram, linewidth=4, color=col2)
+plot(wvfr, "WVixFix Rev", style=plot.style_stepline, linewidth=1, color=color.black, transp=0)
+plot(wvf,  "WVixFix",     style=plot.style_histogram, linewidth=4, color=col)
+plot(wvf,  "WVixFix",     style=plot.style_stepline, linewidth=1, color=color.black, transp=0)
+
+plot(hp and rangeHigh ? rangeHigh : na, "Range High Percentile", linewidth=1, color=color.purple, transp=0)
+plot(hp and rangeLow  ? rangeLow  : na, "Range Low Percentile", linewidth=1, color=color.purple, transp=0)
+plot(sd and upperBand ? upperBand : na, "Upper Band", linewidth=1, color=color.aqua, transp=0)
+
+plot(hp2 and rangeHigh2 ? rangeHigh2 : na, "Range High Percentile", linewidth=1, color=color.orange, transp=0)
+plot(hp2 and rangeLow2  ? rangeLow2  : na, "Range Low Percentile", linewidth=1, color=color.orange, transp=0)
+plot(sd2 and upperBand2 ? upperBand2 : na, "Upper Band", linewidth=1, color=color.teal, transp=0)

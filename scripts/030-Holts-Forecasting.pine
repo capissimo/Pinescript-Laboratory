@@ -1,0 +1,65 @@
+//@version=3
+study("Holt's Forecasting", "HoltsMethod", true, precision=2)
+
+// Holt's method
+// Holt (1957) extended simple exponential smoothing to allow the forecasting of data with a trend. 
+// This method involves a forecast equation and two smoothing equations (one for the level and one for the trend):
+
+// Forecast equation: ŷ = l + h * b 
+// Level equation:    l = alpha * y + (1 - alpha) * (l[1] + b[1])
+// Trend equation:    b = beta * (l - l[1]) + (1 - beta) * b[1]
+// where h is a step forward or lookahead
+// see: https://otexts.com/fpp2/holt.html
+
+//
+// Inputs
+//
+y     = input(close, "Data Source")
+alpha = input(0.4,   "Slope (alpha)", minval=0.1, step=0.01)
+beta  = input(0.75,  "Intercept (beta)", minval=0.2, step=0.01)
+bbp   = input(14,    "BB Lookback", minval=1)
+mult  = input(2.0,   "Multiplier", minval=0.001, maxval=50)
+vmult = input(5000,  "Variance Multiplier", minval=1)
+smthl = input(true,  "Smooth Holst's Level")
+lkb   = input(5,     "Smoothing", minval=2)
+cschm = input(1,     "Bar color scheme", options=[1,2])
+
+//
+// Calc
+//
+l = 0.0, b = 0.0
+l   := alpha * y + (1-alpha) * (nz(l[1]) + nz(b[1]))  // level
+b   := beta * (l-l[1]) + (1-beta) * nz(b[1])          // trend 
+sl   = smthl ? sma(l, lkb) : l
+hlt1 = sl+1*b 
+hlt2 = sl+2*b 
+hlt3 = sl+3*b 
+hlt4 = sl+4*b 
+hlt5 = sl+5*b 
+
+basis = sma(l, bbp) 
+dev   = mult * variance(l, bbp) * vmult
+upper = basis + dev
+lower = basis - dev
+mid   = (upper+lower) / 2
+
+//
+// Plotting
+//
+plot(basis, color=silver, linewidth=1, transp=0)
+fill(plot(upper), plot(lower), color=blue, transp=97)
+
+plot(l,    color=fuchsia, linewidth=2, show_last=14)
+
+plot(hlt1, color=fuchsia, linewidth=3, offset=1, show_last=1) // Forcasts 1..5
+plot(hlt2, color=fuchsia, linewidth=3, offset=2, show_last=1)
+plot(hlt3, color=fuchsia, linewidth=3, offset=3, show_last=1)
+plot(hlt4, color=fuchsia, linewidth=3, offset=4, show_last=1)
+plot(hlt5, color=fuchsia, linewidth=3, offset=5, show_last=1)
+
+//
+// Bar Colors
+//
+clr1 = cschm==1 ? black: na
+clr2 = cschm==1 ? white: na
+barcolor(close < open ? clr1 : clr2)

@@ -1,0 +1,68 @@
+//@version=4
+strategy("4 JMA Crossover Strategy", '', true, precision=2)
+
+// This is an update to my previous 4 JMA strategy that received many likes.
+// In this and several recent strategies I use a simplified strategy setup, featuring trailing stops with very tiny increments.
+// This is done intentionally in order to boost performance to the limit, just to pinpoint that limit. 
+// Strategies with performance of about 90% or above are regarded as viable. 
+// Incorporating various overhead factors such as transaction costs, broker's spread, slippage, pyramiding, etc. 
+// at this stage creates too much 'noise' with the end result when you won't see the forest behind the trees.
+// In practice, I disable the 'Use Strategy Setup' option and fine-tune parameters the way I want.
+
+//*** Functions
+jmax(src, len, p) =>
+    beta = 0.45*(len-1)/(0.45*(len-1)+2)
+    alpha = pow(beta, p)
+    L0=0.0, L1=0.0, L2=0.0, L3=0.0, L4=0.0
+    L0 := (1-alpha)*src + alpha*nz(L0[1])
+    L1 := (src - L0[0])*(1-beta) + beta*nz(L1[1])
+    L2 := L0[0] + L1[0]
+    L3 := (L2[0] - nz(L4[1]))*((1-alpha)*(1-alpha)) + (alpha*alpha)*nz(L3[1])
+    L4 := nz(L4[1]) + L3[0]
+	L4
+
+//*** Inputs
+price = input(close, "Price Data")
+base  = input(7,     "Base Lookback", minval=1)
+p1    = input(22,    "Lookback (18)", minval=1) 
+p2    = input(13,    "Lookback (16)", minval=1)
+p3    = input(8,     "Lookback (14)", minval=1)
+pwr   = input(2,     "JMA Power Parameter (2)", minval=1)
+usep  = input(true,  "Use Pivoting?")
+span  = input(3,     "Pivoting Span", minval=1)
+spiv  = input(false, "Show Pivots")
+
+useStrat = input(true, "Use Strategy Setup")
+useStop  = input(true, "Use Trailing Stop?")
+slPoints = input(1,    "Stop Loss Trail Points", minval=1)
+slOffset = input(1,    "Stop Loss Trail Offset", minval=1)
+yr       = input(2019, "Starting backtest year", minval=2000)
+mn       = input(8,    "Starting backtest month", minval=1, maxval=12)
+dy       = input(1,    "Starting backtest day", minval=1, maxval=31)
+
+//*** Main
+mabase = jmax(price, base, pwr)
+maavg  = avg(jmax(price, p1, pwr), jmax(price, p2, pwr), jmax(price, p3, pwr)) 
+long   = usep ? falling(maavg[1], span) and not falling(maavg, span) : crossover(maavg, mabase)
+short  = usep ? rising(maavg[1], span) and not rising(maavg, span) : crossunder(maavg, mabase)
+
+var float pivot = na, pivot := short ? highest(high, 10) : long ? lowest(low, 10) : na
+pivot_color = pivot<fixnan(pivot)[1] ? color.red : color.lime 
+
+plot(spiv and usep ? pivot : na, linewidth=2, color=pivot_color, offset=-2, transp=0)
+plot(maavg,  color=color.navy)
+plot(mabase, color=color.orange, linewidth=2)
+plotshape(useStrat ? na : long  ? low:  na, text='', style=shape.triangleup, location=location.belowbar, color=color.lime, size=size.tiny)
+plotshape(useStrat ? na : short ? high: na, text='', style=shape.triangledown, location=location.abovebar, color=color.red, size=size.tiny)
+
+//*** Strategy
+if useStrat and year >= yr and month >= mn and dayofmonth >= dy
+    strategy.entry("L", true, 1, when=long)
+    strategy.entry("S", false, 1, when=short) 
+    if (useStop) 
+        strategy.exit("L", from_entry="L", trail_points=slPoints, trail_offset=slOffset)
+        strategy.exit("S", from_entry="S", trail_points=slPoints, trail_offset=slOffset)
+
+alertcondition(long,  title='Buy',  message='go long')
+alertcondition(short, title='Sell', message='go short')  
+    

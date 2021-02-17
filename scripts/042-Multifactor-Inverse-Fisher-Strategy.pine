@@ -1,0 +1,121 @@
+//@version=4
+strategy("Multifactor Inverse Fisher Strategy", '', false, precision=2)
+
+// author: capissimo
+// Best for higher time frames - 30m, 1H, 2H, 3H, 4H, D 
+// The higher the TF, the better the performance, up to 98%, but lesser the number of deals). 
+// Middle time frames (5m, 15m) look viable with Scaled Price (Scaled %P) and MFI factors.
+// The factor list can be extended to include cci, stoch, rsi_stoch, emo, macd, cog, dpo, roc, accdist, cctbb, mom, awesome, tva, etc.
+// Some of them need to be scaled toa 0..100 interval to be passed through the Inverse Fisher transformation (IFT). 
+// The IFT produces a value in the -1..1 interval (see: https://www.mesasoftware.com/papers/TheInverseFisherTransform.pdf).
+// This indicator does NOT repaint.
+
+//*** Inputs
+tf      = input(7,     "Time frame", minval=1, maxval=1440)
+method  = input("MFI", "Factor", options=["Karobein","MFI","RSI","RSX","Scaled %P"])
+p       = input(2,     "RSI Lookback (5)", minval=2)
+psmooth = input(15,    "Smoothing Lookback (1)", minval=0)
+thres   = input(0.,    "Threshold", minval=.0, step=.01)
+j       = input(true,  "Use JMA smoother")
+pwr     = input(1,     "JMA Power Parameter", minval=1)
+kosc    = input(true,  "Show Transformed Karobein Osc")
+
+//*** Functions
+jmax(src, len, p) =>
+    beta = 0.45*(len-1)/(0.45*(len-1)+2)
+    alpha = pow(beta, p)
+    L0=0.0, L1=0.0, L2=0.0, L3=0.0, L4=0.0
+    L0 := (1-alpha)*src + alpha*nz(L0[1])
+    L1 := (src - L0[0])*(1-beta) + beta*nz(L1[1])
+    L2 := L0[0] + L1[0]
+    L3 := (L2[0] - nz(L4[1]))*((1-alpha)*(1-alpha)) + (alpha*alpha)*nz(L3[1])
+    L4 := nz(L4[1]) + L3[0]
+	L4
+
+f(m) => method == m
+
+fisher(x) => (exp(2*x)-1) / (exp(2*x)+1)
+
+karo(x, p) => // Karobein Oscillator
+    ma = ema(x, p)
+    a  = ema(ma < ma[1] ? ma/ma[1] : 0, p)
+    b  = ema(ma > ma[1] ? ma/ma[1] : 0, p)
+    c  = (ma/ma[1])/(ma/ma[1] + b)
+    (2*((ma/ma[1])/(ma/ma[1] + c*a)) - 1) * 100
+
+mfi(p) => // Money Flow Index 
+    typical = hlc3
+    pmf = sum(volume * (change(typical) <= 0 ? 0 : typical), p)
+    nmf = sum(volume * (change(typical) >= 0 ? 0 : typical), p)
+    pmf / (pmf+nmf) * 100   // rs = rsi(pmf, nmf)
+
+rsx(y, p) => // "Noise free" rsi
+    f90_ = 0.0, f88 = 0.0, f28 = 0.0, f30 = 0.0, f38 = 0.0, f40 = 0.0, f48 = 0.0, 
+	f50 = 0.0, f58 = 0.0, f60 = 0.0, f68 = 0.0, f70 = 0.0, f78 = 0.0, f80 = 0.0
+    f90_ := (nz(f90_[1]) == 0.0) ? 1.0 : (nz(f88[1]) <= nz(f90_[1])) ? nz(f88[1])+1 : nz(f90_[1])+1
+    f88 := (nz(f90_[1]) == 0.0) and (p-1 >= 5) ? p-1.0 : 5.0 
+    f8 =  100.0*(y) 
+    f18 = 3.0 / (p + 2.0) 
+    f20 = 1.0 - f18 
+    f10 = nz(f8[1])
+    v8 = f8 - f10 
+    f28 := f20 * nz(f28[1]) + f18 * v8 
+    f30 := f18 * f28 + f20 * nz(f30[1])
+    vC = f28 * 1.5 - f30 * 0.5 
+    f38 := f20 * nz(f38[1]) + f18 * vC 
+    f40 := f18 * f38 + f20 * nz(f40[1])
+    v10 = f38 * 1.5 - f40 * 0.5 
+    f48 := f20 * nz(f48[1]) + f18 * v10 
+    f50 := f18 * f48 + f20 * nz(f50[1])
+    v14 = f48 * 1.5 - f50 * 0.5 
+    f58 := f20 * nz(f58[1]) + f18 * abs(v8) 
+    f60 := f18 * f58 + f20 * nz(f60[1])
+    v18 = f58 * 1.5 - f60 * 0.5
+    f68 := f20 * nz(f68[1]) + f18 * v18 
+    f70 := f18 * f68 + f20 * nz(f70[1])
+    v1C = f68 * 1.5 - f70 * 0.5 
+    f78 := f20 * nz(f78[1]) + f18 * v1C 
+    f80 := f18 * f78 + f20 * nz(f80[1])
+    v20 = f78 * 1.5 - f80 * 0.5
+    f0 = ((f88 >= f90_) and (f8 != f10)) ? 1.0  : 0.0
+    f90 = ((f88 == f90_) and (f0 == 0.0))  ? 0.0  : f90_
+    v4_ = ((f88 < f90) and (v20 > 0.0000000001)) ? (v14 / v20 + 1.0) * 50.0 : 50.0
+    (v4_ > 100.0) ? 100.0 : (v4_ < 0.0) ? 0.0 : v4_
+
+scaleMinimax(x, p, min, max) => // Scaler for the price
+    hi = highest(x, p), lo = lowest(x, p)
+    (max - min) * (x - lo)/(hi - lo) + min
+
+//*** Main
+price  = close // type of price does not matter
+factor = f("RSI") ? rsi(price, p) : f("RSX") ? rsx(price, p) : f("Karobein") ? karo(price, p) : f("MFI") ? mfi(p) : scaleMinimax(price, p, 0, 100) 
+factor_normed   = 0.1 * (factor - 50) 
+factor_smoothed = j ? jmax(factor_normed, psmooth, pwr) * 100 : wma(factor, psmooth) * 100
+
+sec   = security(syminfo.tickerid, tostring(tf), fisher(factor_smoothed)[1], barmerge.gaps_off, barmerge.lookahead_on)  
+long  = crossover(sec, thres)
+short = crossunder(sec, -thres)
+
+lime  = color.new(color.lime, 10), fuchsia = color.new(color.fuchsia, 10), 
+black = color.new(color.black, 100), gray = color.new(color.gray, 50)
+
+bgcolor(long ? lime : short ? fuchsia : black, editable=false)
+plot(scaleMinimax(sec, 1440, -1, 1), transp=0)
+plot(thres, color=color.gray)
+plot(-thres, color=color.gray)
+plot(kosc ? scaleMinimax(karo(price, p), p, -1, 1) : scaleMinimax(karo(price, p), 1440, -1, 1), linewidth=1, color=color.orange, transp=0)
+
+//*** Strategy
+useStop  = input(true, "Use Trailing Stop?")
+slPoints = input(200,  "Stop Loss Trail Points", minval=1)
+slOffset = input(200,  "Stop Loss Trail Offset", minval=1)
+
+if year >= 2019 and month > 7
+    strategy.entry("L", true, 1, when=long)
+    strategy.entry("S", false, 1, when=short) 
+    if (useStop) 
+        strategy.exit("L", from_entry="L", trail_points=slPoints, trail_offset=slOffset)
+        strategy.exit("S", from_entry="S", trail_points=slPoints, trail_offset=slOffset)
+
+alertcondition(long,  title='Buy',  message='go long')
+alertcondition(short, title='Sell', message='go  short')

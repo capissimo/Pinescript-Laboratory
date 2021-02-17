@@ -1,0 +1,61 @@
+//@version=3
+study("SpreadTrade - Correlation", shorttitle="STC", overlay=false)
+
+// Correlation Based Pair Trading Strategy (Trading the spread)
+// There are three popular styles of Pair trading:
+//
+// * Distance based pair trading
+// * Correlation based pair trading
+// * Cointegration based pair trading
+//
+// The correlation based strategy is to short the outperforming instrument and go long on the underperforming one 
+// whenever the temporary correlation weakens which means one instrument going up and another going down.
+// Here, instead of two different instruments two timeframes of the same instrument are used, lower and higher. 
+// In order to calculate the trade size, we would need to calculate hedge_ratio, 
+// which is simply the ratio of the closing price of the instrument in the current tf to the higher tf. 
+// So whenever we want to go short on spread we’ll short 1 unit of current tf and go long on hedge ratio times units of higher tf.
+//
+// In order to generate trading signals, we need to define our trading logic. 
+// So, we’ll go long on the spread when the hedge ratio goes below its p rolling mean by mult times of its 
+// rolling standard deviation and vice versa. 
+// Note that both p and mult can be changed as per your selection of instruments.
+// See: https://analyticsprofile.com/algo-trading/pair-trading-part-2-code-correlation-based-pair-trading-strategy-in-r/
+
+//
+// Inputs
+//
+X = input(close, title="Data source")
+p = input(10, title="Lookback for mean & std")
+mult = input(1., step=.1, title="Multiplier for mean & std")
+atype = input("WMA", options=["WMA", "SMA"], title="Averaging type")
+//customReso = input("10", title="Time frame", options=["01", "03", "05", "10", "15", "20", "30", "45", "60"])  
+customReso = input("10", title="Time frame", type=resolution)  
+   
+//
+// Main  
+//
+min = -1, max = 1
+Y = security(tickerid, customReso, X[1], barmerge.gaps_off, barmerge.lookahead_on)
+ratio = log(X / Y) // hedge ratio
+roll_mean = atype=="WMA" ? wma(ratio, p) : sma(ratio, p)
+roll_std = stdev(ratio, p)
+
+ubound = roll_mean + roll_std * mult
+lbound = roll_mean - roll_std * mult
+
+signal = 0.0
+signal := ratio > ubound ? min : ratio < lbound ? max : (max+min) / 2
+
+buy = signal==max and signal[1]!=max
+sell = signal==min and signal[1]!=min
+
+plot(ubound, color=red)
+plot((ubound+lbound)/2, color=orange)
+plot(lbound, color=green)
+plot(ratio)
+//plot(signal, style=stepline, color=black)
+//corr = correlation(X[1], X[2], 100)
+//plot(corr)
+
+plot(buy ? ratio : na, style=circles, color=red, linewidth=3)
+plot(sell ? ratio : na, style=circles, color=green, linewidth=3)

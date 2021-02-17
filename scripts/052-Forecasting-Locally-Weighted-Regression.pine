@@ -1,0 +1,47 @@
+//@version=4
+study("Forecasting: Locally Weighted Regression", '', true)
+
+// author: capissimo
+// This is a continuation of the series on forecasting techniques.
+// Locally weighted linear regression is a non-parametric algorithm, that is, 
+// the model does not learn a fixed set of parameters as is done in ordinary linear regression. 
+// Rather parameters Θ (theta) are computed individually for each query point x. 
+// While computing Θ, a higher “preference” is given to the points in the training set lying in 
+// the vicinity of x than the points lying far away from x. 
+// For a detailed discussion see https://www.geeksforgeeks.org/ml-locally-weighted-linear-regression/
+// and for the formula see https://fawda123.github.io/swmp_workshop_2016/training_modules/module2_wrtds/wrtds.pdf.
+
+// Here you can see an abridged application of this technique to time series,
+// with results favorable for price data labelling.
+
+// Good at detecting pullbacks. Can be incorporated into a trading system as a signal generator. Alerting is included.
+
+//*** Functions
+locally_weighted(x, p, b) =>
+    PI  = 3.14159265359
+    l = 0.0
+    for i=0 to p-1
+        l := b + b*i + b*2*x[i] + b*sin(2*PI*i) + b*cos(2*PI*i)
+    linreg(l, p, 0) 
+
+//*** Inputs 
+price = input(close, "Price Data")
+p     = input(5,     "Lookback Window")
+span  = input(8,     "Rising/Falling span", minval=2)
+crvs  = input(false, "Show curves?")
+lbls  = input(true,  "Show Labels?")
+
+//*** Main
+BETA  = .5
+lwr   = locally_weighted(price, p, BETA)	
+lnr   = linreg(price, p, 0)
+long  = crossunder(lwr, lnr) and falling(lwr, span) 
+short = crossover(lwr, lnr) and rising(lwr, span) 
+
+plot(crvs ? lwr : na, color=color.red, transp=0)
+plot(crvs ? lnr : na, color=color.lime, transp=0)
+plotshape(lbls and long  ? low  : na, location=location.belowbar, style=shape.labelup, color=color.lime, size=size.small, text=" ", textcolor=color.white, transp=0, offset=-1)
+plotshape(lbls and short ? high : na, location=location.abovebar, style=shape.labeldown, color=color.red, size=size.small, text=" ", textcolor=color.white, transp=0, offset=-1)
+
+alertcondition(long,  title='Buy',  message='go long')
+alertcondition(short, title='Sell', message='go short') 

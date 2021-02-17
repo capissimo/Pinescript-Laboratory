@@ -1,0 +1,51 @@
+//@version=3
+study("Standard Error Bands", overlay=false)
+// idea: https://es.tradingview.com/script/qQjavJxT-Standard-Error-of-the-Estimate-Composite-Bands/
+
+mmax(x,y) =>
+    m = 0.0
+    for i=1 to y
+        if x[i] > m
+            m := x[i]
+    m
+    
+mmin(x,y) =>
+    m = 0.0
+    for i=1 to y
+        if x[i] < m
+            m := x[i]
+    m
+
+scale(src, num) => (close - mmin(close, num)) / (mmax(close, num) - mmin(close, num))
+
+// Standard Error of the Estimate Algorithm's
+beta(array,per) =>
+    val1 = sum(n*array,per)-(per*sma(n,per)*sma(array,per))
+    val2 = sum(pow(n,2),per)-(per*pow(sma(n,per),2))
+    calcB = val1/val2
+    
+alpha(array,per) =>
+    calcA = sma(array,per)-(beta(array,per)*sma(n,per))
+    
+see(array,per,mult,dir,type) =>
+    lr = linreg(array,per,0)
+    val1 = (sum(pow(array,2),per))-((alpha(array,per)*sum(array,per)))-((beta(array,per)*sum(n*array,per)))
+    val2 = per - 2
+    narrow = sqrt(val1/val2)
+    est = sum(pow(lr-array,2),per) / (per - 2 )
+    wide = sqrt(est)
+    d = dir ? 1 : -1
+    band = type ? narrow : wide
+    seb = lr + d * mult * band
+
+src = input(close, title="Data source")
+len = input(21, title="Rolling Lookback Window")
+sdeg = input(3, title="Smoothing Factor")
+
+data = scale(src, 500)
+
+plot(data, color=navy, linewidth=2, transp=0)
+UNB = plot(sma(see(data, len, 3, true, true), sdeg), linewidth=5, color=red, transp=40)
+middle = plot(sma(linreg(data, len, 0),sdeg), color=orange, style=line, transp=0)
+BNB = plot(sma(see(data, len, 3, false, true), sdeg), linewidth=5, color=green, transp=40)
+fill(UNB, BNB, title="NarrowSEE", color=blue, transp=97)

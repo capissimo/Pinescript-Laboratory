@@ -1,0 +1,22 @@
+//@version=3
+study("Bin RSI", overlay=false)
+
+ifisher(src, len) =>
+    hi = highest(src, len)
+    lo = lowest(src, len)
+    value0 = 0.0, ifisher = 0.0
+    value0 := .66 * ((src - lo) / max(hi - lo, .001) - .5) + .67 * nz(value0[1])
+    value1 = value0 > .99 ? .999 : value0 < -.99 ? -.999 : value0  //round
+    ifisher := .5 * log((1 + value1) / max(1 - value1, .001)) + .5 * nz(ifisher[1])
+    ifisher
+    
+normalize(src, len) =>
+    hi  = highest(src, len)
+    lo  = lowest(src, len)
+    res = (src - lo)/(hi - lo)
+    
+len = input(20, title="Lookback")
+
+r = normalize(ifisher(rsi(close, len), len), 2)
+
+plot(r, linewidth=2, color=teal, transp=0)

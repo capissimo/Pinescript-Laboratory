@@ -1,0 +1,43 @@
+//@version=4
+study("Squeeze Momentum Indicator Mod", '', false)
+
+// author: LazyBear
+// modification: capissimo
+
+scaler(x, p) => (x - lowest(x, p)) / (highest(x, p) - lowest(x, p))
+
+length   = input(8,   "BB Length", options=[2,3,5,8,13,15,20,34,55,89,144])
+mult     = input(2.0, "BB MultFactor")
+lengthKC = input(5,   "KC Length", options=[2,3,5,8,13,15,20,34,55,89,144])
+multKC   = input(1.5, "KC MultFactor", step=.1)
+useTR    = input(true,"Use TrueRange (KC)?")
+useval   = input(false,"Show Averaged signal Line?")
+
+// BB
+y       = close
+basis   = sma(y, length)
+dev     = multKC * stdev(y, length)
+upperBB = basis + dev
+lowerBB = basis - dev
+
+// KC
+ma      = sma(y, lengthKC)
+range   = useTR ? tr : (high - low)
+rangema = sma(range, lengthKC)
+upperKC = ma + rangema * multKC
+lowerKC = ma - rangema * multKC
+
+sqzOn  = (lowerBB > lowerKC) and (upperBB < upperKC)
+sqzOff = (lowerBB < lowerKC) and (upperBB > upperKC)
+noSqz  = (sqzOn == false) and (sqzOff == false)
+
+val    = scaler(linreg(y - avg(avg(highest(high, lengthKC), lowest(low, lengthKC)), sma(close, lengthKC)), lengthKC, 0), length)
+val2   = scaler(linreg(y - avg(avg(highest(high, lengthKC), lowest(low, lengthKC)), sma(close, lengthKC)), lengthKC, 0), length*4)
+
+bcolor = val > .5 ? val > nz(val[1]) ? color.lime : color.green : val < nz(val[1]) ? color.red : color.maroon
+scolor = noSqz ? color.blue : sqzOn ? color.black : color.gray 
+
+hline(.5)
+plot(val, color=bcolor, style=plot.style_histogram, linewidth=4, transp=10)
+plot(.5, color=scolor, style=plot.style_circles, linewidth=2, transp=0)
+plot(useval ? val2 : na, color=color.orange, linewidth=1, transp=0)

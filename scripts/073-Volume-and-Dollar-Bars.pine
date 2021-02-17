@@ -1,0 +1,31 @@
+//@version=4
+study("Volume & Dollar Bars", '', true, precision=2)
+
+// author: capissimo
+// This scriptlet is a part of an ongoing project and attempts at volume and dollar bar identification. 
+// The original idea is taken from excellent books 'Hands-On Machine Learning for Algorithmic Trading' (2019) by Stefan Jansen and
+// 'Advances in Financial Machine Learning' (2018) by Marcos Lopez de Prado
+
+//*** Functions
+changed(x) => x != x[1]
+
+//*** Inputs
+price   = input(open,         "Price Data")
+bartype = input("Volume Bar", "Bar Type", options=["Volume Bar","Dollar Bar"])
+delta   = input(34,           "Delta", minval=0., step=.01)
+
+//*** Main
+bar = 0.0
+bar := (bartype=="Volume Bar" ? nz(bar) + volume : nz(bar) + volume * price) 
+bar := bar > delta ? 0.0 : bar
+
+long  = nz(bar) + volume > delta and open < close 
+short = nz(bar) + volume > delta and open > close 
+
+state = 0
+state := long ? 1 : short ? -1 : nz(state[1])
+longst  = changed(state) and state[1]==-1 
+shortst = changed(state) and state[1]==1 
+
+plotshape(longst  ? low : na, location=location.belowbar, style=shape.triangleup, color=color.lime, size=size.tiny, text=" ", textcolor=color.white, transp=0)
+plotshape(shortst ? high : na, location=location.abovebar, style=shape.triangledown, color=color.red, size=size.tiny, text=" ", textcolor=color.white, transp=0)

@@ -1,0 +1,57 @@
+//@version=4
+study("AAPP with Alerts", '', true, precision=2)
+
+// author: capissimo
+
+// This is my experimental AAPP script now with alerts.
+
+//*** Inputs
+y      = input(close, "Dataset") 
+gamma  = input(0.,    "Gamma", step=.1)
+fast   = input(2,     "Fast Length (1H=1, 5m=2)", minval=1)
+slow   = input(8,     "Slow Length (1H=3, 5m=8)", minval=1)
+bwma   = input(false, "Apply smoothing?")
+labels = input(true,  "Show Labels?")
+
+//*** Functions
+ppo_divergence(x, fast, slow) =>
+    up_fast   = rma(max(change(x), 0), fast), down_fast = rma(-min(change(x), 0), fast)
+    rsi_fast  = down_fast == 0 ? 1 : up_fast == 0 ? 0 : 1 - (1 / (1 + up_fast / down_fast))
+
+    up_slow   = rma(max(change(x), 0), slow), down_slow = rma(-min(change(x), 0), slow)
+    rsi_slow  = down_slow == 0 ? 1 : up_slow == 0 ? 0 : 1 - (1 / (1 + up_slow / down_slow))
+    [rsi_fast, rsi_slow]
+
+ama(x, pa) =>
+    alpha = abs(change(y, pa)) / sum(abs(change(y)), pa)
+    a = 0., a := alpha*x + (1-alpha)*nz(a[1],x)
+
+aama(x, p, slow) =>
+    ma  = 0.
+    d   = cum(abs(y - nz(ma[1], y))) / bar_index * gamma
+    ma := ama(ama(y > nz(ma[1], y) + d ? y + d : y < nz(ma[1], y) - d ? y - d : nz(ma[1], y), p), p)
+    wma(ma, slow)
+
+changed(x) => x!=x[1]
+
+//*** Main
+[rsi_fast, rsi_slow] = ppo_divergence(y, fast, slow)
+divergence = (rsi_fast - rsi_slow) + .5
+mas        = wma(divergence, slow)
+ma         = aama(y, 2, slow)
+
+c   = fixnan(ma > ma[1] ? color.blue : ma < ma[1] ? color.red : na)
+st  = 0.0, st := changed(c) and c==color.blue ? high : changed(c) and c==color.red ? low : nz(st[1]) 
+
+long  = changed(c) and c==color.blue
+short = changed(c) and c==color.red
+
+plot(bwma ? mas : na, linewidth=7, color=c, transp=60)
+plot(bwma ? na : ma, color=c, linewidth=9, transp=60)
+plot(changed(st) ? st : st[1], color=color.blue, linewidth=2, transp=0)
+plotshape(labels and long  ? low : na, location=location.belowbar, style=shape.labelup, color=color.green, size=size.tiny, text="B", textcolor=color.white, transp=0)
+plotshape(labels and short ? high : na, location=location.abovebar, style=shape.labeldown, color=color.red, size=size.tiny, text="S", textcolor=color.white, transp=0)
+
+alertcondition(long,  title='Buy',  message='go long')
+alertcondition(short, title='Sell', message='go short') 
+alertcondition(long or short, title='General Alert', message='Deal Time!')

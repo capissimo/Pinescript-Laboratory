@@ -1,0 +1,54 @@
+//@version=4
+study("Volume Flow v3 (Rescaled Update)", '', false)
+
+// author: oh92
+// modification: capissimo
+
+//*** Inputs
+maType = input("Simple", "Moving Average Type", options=["Simple", "Exponential", "Double Exponential"])
+length = input(14,       "MA Length")
+x      = input(3.1,      "Factor For Breakout Candle", minval=.001, step=.01)
+
+//*** Functions
+scaler(x, p) => (x - lowest(x, p)) / (highest(x, p) - lowest(x, p)) 
+
+dema(src, len) => (2 * ema(src, len) - ema(ema(src, len), len))  // Double EMA Function
+
+//*** Main
+V = scaler(volume, length)
+O = scaler(open, length)
+C = scaler(close, length)
+
+vol  =  V
+bull =  C > O ? vol : 0 
+bear =  O > C ? vol : 0
+
+// Bull and BEAR Moving Average Calculation
+bullma = maType == "Exponential" ?        ema(bull, length) :
+         maType == "Double Exponential" ? dema(bull, length) :
+         sma(bull, length)
+
+bearma = maType == "Exponential" ?        ema(bear, length) :
+         maType == "Double Exponential" ? dema(bear, length) :
+         sma(bear, length)
+
+vf_dif      = bullma - bearma
+vf_absolute = vf_dif > 0 ? vf_dif : vf_dif * (-1)
+
+// Volume Spikes
+gsig = crossover(bull, bullma * x) ? vol : na
+rsig = crossover(bear, bearma * x) ? vol : na
+
+red   = color.red  //#FF510D //#ff848a // #FA8072 // #323433 // #ff848a
+green = color.lime //#5AA650 // #8cffe5 // #6DC066 // #80aebd // #8cffe5
+vdClr = vf_dif > 0 ? green : red
+vClr  = C > O ? green : red
+
+plot(vol, color=vClr, style=plot.style_columns, transp=80, title="Volume")
+plot(bullma*2, color=green, linewidth=1, transp=0, title="Bull MA")
+plot(bearma*2, color=red, linewidth=1, transp=0, title="Bear MA")
+
+plot(gsig, style=plot.style_columns, transp=50, color=green, title="Bull Vol Spike")
+plot(rsig, style=plot.style_columns, transp=50, color=red, title="Bear Vol Spike")
+
+plot(vf_absolute/2.5, style=plot.style_area, color=vdClr, title="Difference Value")

@@ -1,0 +1,44 @@
+//@version=4
+strategy("GetTrend Strategy", '', true)
+
+// This is a port to PS4 of an amazingly simple solution 
+// that may have good prospects as a standalone indicator or an add-on.
+// Many thanks to its authors and contributors.
+
+//*** Inputs
+tf       = input(8,    "TF", options=[2, 3, 5, 8, 13, 21, 34, 55, 89, 144, 233, 377, 610, 987])
+repnt    = input(true, "Repaint?")
+
+useStrat = input(true, "***Use Strategy Setup")
+useStop  = input(true, "Use Trailing Stop?") 
+slPoints = input(1,    "Stop Loss Trail Points", minval=1)
+slOffset = input(1,    "Stop Loss Trail Offset", minval=1)
+dummy    = input(true, "Modify the starting time below if not working...")
+yr       = input(2019, "Starting backtest year", minval=2000)
+mn       = input(8,    "Starting backtest month", minval=1, maxval=12)
+dy       = input(20,   "Starting backtest day",   minval=1, maxval=31)
+
+//*** Main 
+out1  = security(syminfo.tickerid, tostring(tf), repnt ? open : open[1], lookahead=barmerge.lookahead_on)
+out2  = security(syminfo.tickerid, tostring(tf), repnt ? close : close[1], lookahead=barmerge.lookahead_on)
+long  = crossover(out2, out1)
+short = crossunder(out2, out1)
+
+plot(out1, color=color.red, transp=0)
+plot(out2, color=color.lime, transp=0)
+
+if long 
+    label.new(x=bar_index, y=low, text="B", xloc=xloc.bar_index, yloc=yloc.belowbar, style=label.style_labelup, color=color.green, textcolor=color.white, size=size.tiny)    
+if short 
+    label.new(x=bar_index, y=high, text="S", xloc=xloc.bar_index, yloc=yloc.abovebar, style=label.style_labeldown, color=color.red, textcolor=color.white, size=size.tiny)    
+
+//*** Strategy
+if useStrat and year >= yr and month >= mn and dayofmonth >= dy
+    strategy.entry("L", true, 1, when=long)
+    strategy.entry("S", false, 1, when=short) 
+    if (useStop) 
+        strategy.exit("L", from_entry="L", trail_points=slPoints, trail_offset=slOffset)
+        strategy.exit("S", from_entry="S", trail_points=slPoints, trail_offset=slOffset)
+
+alertcondition(long,  title='Buy',  message='go long')
+alertcondition(short, title='Sell', message='go short') 

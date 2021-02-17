@@ -1,0 +1,59 @@
+// This source code is subject to the terms of the Mozilla Public License 2.0 at https://mozilla.org/MPL/2.0/
+// © capissimo
+
+//@version=4
+study("LeMan Trend Indicator", '', false)
+
+// LeMan Trend Indicator (Euro and Pound)
+// Description: This is a sample Trend Trading indicator, best used as a support to a main indicator or as a signal filter. 
+// Style tags:  Trend Following, Trend Analysis
+// Asset class: Equities, Futures, ETFs, Currencies and Commodities
+// Dataset:     FX Minutes/Hours
+
+// Nov, 17, 2020 - Minor fix. Added normalization and approximate equality
+
+//-------------------- Inputs 
+
+Min    = input(13,    'Min Lookback',        minval=1)
+Middle = input(21,    'Middle Lookback',     minval=1) 
+Max    = input(34,    'Max Lookback',        minval=1)
+tol    = input(0.0015,'Tolerance',           minval=0.0001, step=.0001)
+
+//-------------------- DynArrays 
+
+buy      = 0.0    
+sell     = 0.0
+
+//-------------------- Custom Functions 
+
+cGreen(g) => g>9 ? #006400 : g>8 ? #1A741A : g>7 ? #338333 : g>6 ? #4D934D : g>5 ? #66A266 : g>4 ? #80B280 : g>3 ? #99C199 : g>2 ? #B3D1B3 : g>1?  #CCE0CC : #E6F0E6
+cRed(g)   => g>9 ? #E00000 : g>8 ? #E31A1A : g>7 ? #E63333 : g>6 ? #E94D4D : g>5 ? #EC6666 : g>4 ? #F08080 : g>3 ? #F39999 : g>2 ? #F6B3B3 : g>1?  #F9CCCC : #FCE6E6
+
+isZero(val, eps) => abs(val) <= eps
+
+mean(x)  => cum(x) / bar_index
+varnc(x) => cum(pow(x - mean(x), 2)) / (bar_index-1)
+std(x)   => sqrt(varnc(x))
+znorm(x) => (x - mean(x)) / std(x)
+
+//-------------------- Logic 
+
+high1 = high[-highestbars(high[1], Min)]
+high2 = high[-highestbars(high[1], Middle)]
+high3 = high[-highestbars(high[1], Max)]
+
+low1  = low[-lowestbars(low[1], Min)]
+low2  = low[-lowestbars(low[1], Middle)]
+low3  = low[-lowestbars(low[1], Max)]
+
+buy  := (low1 - low)   + (low2 - low)   + (low3 - low)
+sell := (high - high1) + (high - high2) + (high - high3)
+
+zero = isZero(buy-sell, tol)
+
+//-------------------- Rendering 
+		
+plot(0, color=color.gray, linewidth=1, transp=0)
+plot(zero ? buy-sell : na,  color=color.yellow, style=plot.style_linebr, linewidth=6)
+plot(znorm(buy),  color=zero ? color.new(color.black,60) : cRed(10))
+plot(znorm(sell), color=zero ? color.new(color.black,60) : cGreen(10))

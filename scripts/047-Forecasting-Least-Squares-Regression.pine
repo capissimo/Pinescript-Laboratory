@@ -1,0 +1,60 @@
+//@version=4
+strategy("Forecasting: Least Squares Regression", '', false, precision=2)
+
+// author: capissimo
+// Tested on 5m TF with EURUSD. 
+// Settings should be modified appropriately for other TFs, lookbacks and securities.
+// This indicator does not repaint.
+
+//*** Inputs
+price   = input(close, "Price Data")
+tf      = input(2,     "Timeframe", minval=1, maxval=1440)
+p       = input(4,     "Lookback window", minval=2)  
+repnt   = input(true,  "Repaint?")
+
+useStrat = input(true, "***Use Strategy Setup?***")
+useStop  = input(true, "Use Trailing Stop?") 
+slPoints = input(1,    "Stop Loss Trail Points", minval=1)
+slOffset = input(1,    "Stop Loss Trail Offset", minval=1)
+dummy    = input(true, "Modify the starting time below if not working...")
+yr       = input(2019, "Starting backtest year", minval=2000)
+mn       = input(8,    "Starting backtest month", minval=1, maxval=12)
+dy       = input(20,   "Starting backtest day",   minval=1, maxval=31)
+
+//*** Functions
+random(i) => second(time) * close[i] 
+
+mean(X, p) => sum(X, p) / p
+
+lsq(x, y, p) => // ordinary least squares (OLS) prediction
+    beta = correlation(x, y, p) * stdev(y, p) / stdev(x, p)
+    alpha = mean(y, p) - beta * mean(x, p) 
+    beta * x + alpha
+
+karo(x, p) => // Karobein Oscillator used as a filter
+    ma = ema(x, p)
+    a  = ema(ma < ma[1] ? ma/ma[1] : 0, p)
+    b  = ema(ma > ma[1] ? ma/ma[1] : 0, p)
+    c  = (ma/ma[1])/(ma/ma[1] + b)
+    (2*((ma/ma[1])/(ma/ma[1] + c*a)) - 1) 
+    
+//*** Main
+sec     = security(syminfo.tickerid, tostring(tf), repnt ? price : price[1], lookahead=barmerge.lookahead_on)
+gendata = 1.25 * sqrt(price) + random(1) // generate dataset
+pred    = karo(lsq(sec, gendata, p), p) 
+long    = pred[1] < pred[2] and pred[1] < pred //and (abs(close-close[2])>syminfo.mintick*2)
+short   = pred[1] > pred[2] and pred[1] > pred //and (abs(close-close[2])>syminfo.mintick*2)
+
+bgcolor(long ? color.lime : short ? color.red : na, editable=false, transp=20)
+plot(pred, linewidth=1) 
+
+//*** Strategy
+if useStrat and year >= yr and month >= mn and dayofmonth >= dy
+    strategy.entry("L", true, 1, when=long)
+    strategy.entry("S", false, 1, when=short) 
+    if (useStop) 
+        strategy.exit("L", from_entry="L", trail_points=slPoints, trail_offset=slOffset)
+        strategy.exit("S", from_entry="S", trail_points=slPoints, trail_offset=slOffset)
+
+alertcondition(long,  title='Buy',  message='go long')
+alertcondition(short, title='Sell', message='go short') 

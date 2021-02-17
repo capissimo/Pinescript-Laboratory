@@ -1,0 +1,44 @@
+//@version=4
+strategy("Hull Trend with Kahlman Strategy", "HMA-Kahlman Trend Strat", true)
+
+src       = input(hl2,   "Price Data")
+length    = input(24,    "Lookback")
+showcross = input(true,  "Show cross over/under")
+gain      = input(10000, "Gain")
+k         = input(true,  "Use Kahlman")
+
+hma(_src, _length) =>
+    wma((2 * wma(_src, _length / 2)) - wma(_src, _length), round(sqrt(_length)))
+    
+hma3(_src, _length) =>
+    p = length/2
+    wma(wma(close,p/3)*3 - wma(close,p/2) - wma(close,p),p)
+
+kahlman(x, g) =>
+    kf = 0.0
+    dk = x - nz(kf[1], x)
+    smooth = nz(kf[1],x)+dk*sqrt((g/10000)*2)
+    velo = 0.0
+    velo := nz(velo[1],0) + ((g/10000)*dk)
+    kf := smooth+velo
+  
+a = k ? kahlman(hma(src, length), gain) : hma(src, length)
+b = k ? kahlman(hma3(src, length), gain) : hma3(src, length)
+c = b > a ? color.lime : color.red
+crossdn = a > b and a[1] < b[1]
+crossup = b > a and b[1] < a[1]
+
+p1 = plot(a,color=c,linewidth=1,transp=75)
+p2 = plot(b,color=c,linewidth=1,transp=75)
+fill(p1,p2,color=c,transp=55)
+plotshape(showcross and crossdn ? a : na, location=location.absolute, style=shape.labeldown, color=color.red, size=size.tiny, text="S", textcolor=color.white, transp=0, offset=-1)
+plotshape(showcross and crossup ? a : na, location=location.absolute, style=shape.labelup, color=color.green, size=size.tiny, text="B", textcolor=color.white, transp=0, offset=-1)
+
+longCondition = crossup
+if (longCondition)
+    strategy.entry("LE", strategy.long)
+
+shortCondition = crossdn
+if (shortCondition)
+    strategy.entry("SE", strategy.short)
+    

@@ -1,0 +1,47 @@
+//@version=4
+study("Smart Labelling: Range Filter", '', true, precision=2)
+
+// author: Donovan Wall; thx
+// modified: capissimo
+
+// This is a labelling module based on a range filter.
+// Notice that the trick here is to use fibo numbers. Use smaller range multiplier for higher TFs. 
+// This module may serve as a signal generator to be passed through a signal filter.
+
+// Quote from the original author: 
+// This is an experimental study designed to filter out minor price action for a clearer view of trends.
+// Inspired by the QQE's volatility filter, this filter applies the process directly to price rather than to a smoothed RSI.
+// First, a smooth average price range is calculated for the basis of the filter and multiplied by a specified amount.
+// Next, the filter is calculated by gating price movements that do not exceed the specified range.
+// Lastly the target ranges are plotted to display the prices that will trigger filter movement.
+
+//*** Inputs
+price   = input(close, "Price Data")
+mult    = input(.382,  "Range Multiplier", options=[.0146, .236, .382, .5, .618, .786, .901, 1., 1.382, 1.618, 2.618, 3.618, 4.236, 5., 6.18, 7.86, 10])
+blabels = input(true,  "Show Labels")
+
+//*** Functions
+smoothrange(x, t, m) => // Smooth Average Range
+    wper      = (t*2) - 1
+    avrng     = ema(abs(x - x[1]), t)
+    ema(avrng, wper) * m
+
+rangefilter(x, r) => // Range Filter
+    rf  = x
+    rf := x > nz(rf[1]) ? ((x - r) < nz(rf[1]) ? nz(rf[1]) : (x - r)) : ((x + r) > nz(rf[1]) ? nz(rf[1]) : (x + r))
+
+//*** Main
+smthr    = smoothrange(price, 1440, mult)
+rfilt    = rangefilter(price, smthr)
+upward   = 0.0, upward   := rfilt > rfilt[1] ? nz(upward[1]) + 1   : rfilt < rfilt[1] ? 0 : nz(upward[1])
+downward = 0.0, downward := rfilt < rfilt[1] ? nz(downward[1]) + 1 : rfilt > rfilt[1] ? 0 : nz(downward[1])
+
+state    = 0, state := upward ? 1 : downward ? -1 : nz(state[1]) // fix
+long     = change(state) and state[1]==-1 
+short    = change(state) and state[1]==1
+
+plotshape(blabels and long  ? low : na,  location=location.belowbar, style=shape.labelup, color=color.green, size=size.small, text=" ", textcolor=color.white, transp=0)    
+plotshape(blabels and short ? high : na, location=location.abovebar, style=shape.labeldown, color=color.red, size=size.small, text=" ", textcolor=color.white, transp=0)
+
+alertcondition(long,  title='Buy',  message='go long')
+alertcondition(short, title='Sell', message='go short') 

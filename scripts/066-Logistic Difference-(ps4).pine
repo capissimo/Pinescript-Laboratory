@@ -1,0 +1,36 @@
+//@version=4
+
+study("Logistic Difference (ps4)", '', false, precision=2)
+
+// author: capissimo
+// Logistic Difference Indicator uses logistic function (sigmoid), which stabilizes the variance of data.
+// The logistic function resembles the inverse Fisher transform. This version has a repaint/non-repaint switch
+// and a scaling feature.
+
+//*** Inputs
+price  = input(close, "Price data")
+p      = input(5,     "Lookback window", minval=1) 
+k      = input(1,     "K Coeff", minval=1) 
+smooth = input(55,    "Smoothing Lookback window", options=[2,3,5,8,13,21,34,55,89,144]) // fibo numbers
+rep    = input(false, "Repainting?")
+sc     = input(true,  "Scaling?")
+
+//*** Functions
+scaler(x, p) => (x - lowest(x, p)) / (highest(x, p) - lowest(x, p))
+
+//*** Main
+sec      = security(syminfo.tickerid, timeframe.period, (rep ? price : price[1]), lookahead=barmerge.lookahead_on)  
+diff     = sec - sec[p]
+markup   = diff / sec[p]
+discount = diff / sec
+log1     = 1/(1+exp(k * -markup))
+log2     = 1/(1+exp(k * discount))
+
+ma1   = linreg(log1, smooth, 0)  // any MA-function can be used here
+ma2   = linreg(log2, smooth, 0)
+logs1 = sc ? scaler(ma1, smooth) : ma1 
+logs2 = sc ? scaler(ma2, smooth) : ma2 
+
+a1 = plot(logs1, color=logs1 > 0.5 ? color.lime : color.red, transp=0, linewidth=2) 
+a2 = plot(logs2, color=color.gray, transp=0, linewidth=1) 
+fill(a1, plot(0.5, color=color.gray, transp=0), color=log1 > 0.5 ? color.lime : color.red)

@@ -1,0 +1,48 @@
+//@version=3
+study("Logistic Difference", '', false, precision=1)
+
+// Logistic Difference Indicator uses logistic function (sigmoid), which stabilizes the variance of data.
+// The logistic function resembles the inverse fisher transform. 
+
+//
+// Functions
+//
+jmax(x, p, pwr) =>
+    beta = 0.45*(p-1)/(0.45*(p-1)+2)
+    alpha = pow(beta, pwr)
+    L0=0.0, L1=0.0, L2=0.0, L3=0.0, L4=0.0
+    L0 := (1-alpha)*x + alpha*nz(L0[1])
+    L1 := (x - L0[0])*(1-beta) + beta*nz(L1[1])
+    L2 := L0[0] + L1[0]
+    L3 := (L2[0] - nz(L4[1]))*((1-alpha)*(1-alpha)) + (alpha*alpha)*nz(L3[1])
+    L4 := nz(L4[1]) + L3[0]
+	L4
+
+X = security(tickerid, period, input(close), lookahead=barmerge.lookahead_on)  // Non repainting; opt: close[1]
+length = input(5) 
+k = input(1, minval=1) 
+pow = input(7, title="Power", minval=-1) 
+jmalen = input(20, minval=1)  //20
+
+//
+// Calc
+//
+diff = X - X[length]
+markup = diff/ X[length]
+discount = diff / X
+log1 = 1/(1+exp(k * -markup))
+log2 = 1/(1+exp(k * discount))
+
+logs1 = jmax(log1, jmalen, pow)
+logs2 = jmax(log2, jmalen, pow)
+
+//
+// Plotting
+//
+a1 = plot(logs1, color=logs1 > 0.5 ? green : red, transp=0, linewidth=2) 
+a2 = plot(logs2, color=gray, transp=0, linewidth=1) 
+b = plot(0.5, color=gray, transp=0)
+fill(a1, b, color=log1 > 0.5 ? #1B5BBB : red)
+
+is_newbar(res) => change(time(res)) != 0 ? 1 : 0
+bgcolor(color=is_newbar("60") ? gray : na, transp=80) 

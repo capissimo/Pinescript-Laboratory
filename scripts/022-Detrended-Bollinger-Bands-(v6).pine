@@ -1,0 +1,36 @@
+//@version=3
+study("Detrended Bollinger Bands (v.6)", "DBB6", false, precision=3)
+
+//
+// Functions
+//
+log2(x) => log(x) / log(2)
+
+entropy(p) => -p*log2(p) - (1 - p)*log2((1 - p))  // informational volume 
+
+normalize(X, p) =>
+    hi  = highest(X, p)
+    lo  = lowest(X, p)
+    (X - lo)/(hi - lo)
+
+//
+// Inputs
+//
+X = input(close, title="Data source")
+p = input(2, title="Lookback window")  
+
+//
+// Main
+//
+std = stdev(X, p)
+uppers =  std  
+lowers = -std  
+
+normed_x = normalize(abs(open-close), 100)
+ent = entropy(normed_x) 
+clr = ent < .5 ? #f7a200 : close>close[1] ? green : red 
+
+plot(0, color=black, linewidth=1, transp=50)  // midline
+b1=plot(uppers, color=blue, transp=0) 
+b2=plot(lowers, color=blue, transp=0)
+fill(b1, b2, color=clr, transp=50)

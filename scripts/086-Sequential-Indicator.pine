@@ -1,0 +1,23 @@
+//@version=4
+study('Sequential Indicator', '', false, precision=2)
+
+// author: capissimo
+
+// This minimalistic indicator captures mid-term trends. 
+// Best to be used in conjunction with short-term trend detectors as a filter.
+
+//*** Functions
+scaler(x, p) => (x - lowest(x, p)) / (highest(x, p) - lowest(x, p))
+
+//*** Inputs
+p  = input(15, "Lookback Window", minval=1)
+th = input(0,  "Threshold", step=.01)
+
+//*** Main
+C = linreg(scaler(close, p), p, 0)
+
+up_seq = max(0, barssince(C >  1 + th ? 1 : 0))
+md_seq = max(0, barssince(C >= -th and C <= 1 + th ? 1 : 0))
+dn_seq = max(0, barssince(C <  -th ? 1 : 0))
+
+fill(plot(up_seq), plot(dn_seq, color=color.red), color=up_seq > dn_seq ? color.red : color.green, transp=50)

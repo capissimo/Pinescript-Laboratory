@@ -1,0 +1,79 @@
+//@version=4
+strategy("Scaled Normalized Vector Strategy (v.4.1)", '', false, precision=2)
+
+// author: capissimo
+// This modification of the Scaled Normalized Vector Strategy uses trailing stops and is optimized for lower TFs
+
+price    = input(close,  "Price Data")
+tf       = input(6,      "Timeframe", minval=1, maxval=1440)
+thresh   = input(14.,    "Threshold", minval=.1, step=.1) 
+div      = input(1000000,"Divisor", options=[1,10,100,1000,10000,100000,1000000,10000000,100000000])
+mmx      = input(233,    "Minimax Lookback", options=[1, 2, 3, 5, 8, 13, 21, 34, 55, 89, 144, 233, 377, 610, 987, 1597, 2584])
+showVol  = input(false,  "Volume")
+useold   = input(true,   "Use Old System")
+method   = input("Swish","Activation", options=["Step", "LReLU", "Swish", "None"])
+useStop  = input(true,   "Use Trailing Stop?")
+slPoints = input(200,    "Stop Loss Trail Points", minval = 1)
+slOffset = input(400,    "Stop Loss Trail Offset", minval = 1)
+
+scaleMinimax(X, p, min, max) => 
+    hi = highest(X, p), lo = lowest(X, p)
+    (max - min) * (X - lo)/(hi - lo) + min
+
+getdiff(prc, tf) =>
+    prev  = scaleMinimax((useold ? security(syminfo.tickerid, tostring(tf), prc[1], barmerge.gaps_off, barmerge.lookahead_on) 
+                                 : security(syminfo.tickerid, tostring(tf), prc[1])), tf, 0, 1)
+    curr  = scaleMinimax((useold ? security(syminfo.tickerid, tostring(tf), hlc3, barmerge.gaps_off, barmerge.lookahead_on)  
+                                 : security(syminfo.tickerid, tostring(tf), hlc3)), tf, 0, 1)
+    (curr/prev) - 1
+
+relu(x) => max(x, 0)
+lrelu(x, alpha) => relu(x) - alpha * relu(-x)
+step(x) => x >= 0 ? 1 : -1
+sigmoid(x) => 1 / (1 + exp(-x))
+swish(x) => x * sigmoid(x)
+
+f(m) => method==m
+
+vol  = useold ? security(syminfo.tickerid, tostring(tf), volume, barmerge.gaps_off, barmerge.lookahead_on) 
+              : security(syminfo.tickerid, tostring(tf), volume)
+obv  = cum(change(price) > 0 ? vol : change(price) < 0 ? -vol : 0*vol)
+prix = showVol ? obv : price
+x    = getdiff(prix, tf)
+p    = f("Swish") ? swish(x) : f("Step") ? step(x) : f("LReLU") ? lrelu(x, .8) : x
+th   = thresh/div
+long = crossover(p, th)
+short= crossunder(p, -th)
+
+lime  = color.new(color.lime, 10), fuchsia = color.new(color.fuchsia, 10), 
+black = color.new(color.black, 100), gray = color.new(color.gray, 50)
+bg    = long ? lime : short ? fuchsia : black
+cl    = p > th ? color.green : p < -th ? color.red : color.silver
+
+bgcolor(bg, editable=false)
+plot(scaleMinimax(th, mmx, -1, 1), color=lime, editable=false, transp=0)
+hline(0, linestyle=hline.style_dotted, title="base line", color=gray, editable=false)
+plot(scaleMinimax(-th, mmx, -1, 1), color=fuchsia, editable=false, transp=0)
+plot(scaleMinimax(p, mmx, -1, 1), color=cl, style=plot.style_histogram, transp=70, editable=false)
+plot(scaleMinimax(p, mmx, -1, 1), color=cl, style=plot.style_linebr, title="prediction", transp=0, editable=false)
+
+strategy.entry("L", true, 1, when=long)
+strategy.entry("S", false, 1, when=short)
+
+if (useStop) // in case of using the trailing stop
+    strategy.exit("L", from_entry="L", trail_points=slPoints, trail_offset=slOffset)
+    strategy.exit("S", from_entry="S", trail_points=slPoints, trail_offset=slOffset)
+    
+alertcondition(long, title='Long', message='Long Signal!')
+alertcondition(short, title='Short', message='Short Signal!')
+
+//*** Karobein Oscillator
+per  = input(8, "Karobein Osc Lookback")
+
+prix2 = ema(price, per)
+a = ema(prix2 < prix2[1] ? prix2/prix2[1] : 0, per)
+b = ema(prix2 > prix2[1] ? prix2/prix2[1] : 0, per)
+c = (prix2/prix2[1])/(prix2/prix2[1] + b)
+d = 2*((prix2/prix2[1])/(prix2/prix2[1] + c*a)) - 1
+
+plot(scaleMinimax(d, mmx, -1, 1), color=color.orange, transp=0)

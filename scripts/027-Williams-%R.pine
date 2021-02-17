@@ -1,0 +1,35 @@
+//@version=3
+study("Williams %R", '', false)
+
+// Developed by Larry Williams, Williams %R is a momentum indicator 
+// much like the Stochastic Oscillator and is especially popular 
+// for measuring overbought and oversold levels. 
+// The scale ranges from 0 to -100 with readings from 0 to -20 considered overbought, 
+// and readings from -80 to -100 considered oversold. 
+// Typically, Williams %R is calculated using 14 periods and can be used on intraday, 
+// daily, weekly or monthly data. 
+
+// This implementation is enhanced with CCI in the form of background colors 
+// as a confirming signal and an indication of a prevailing trend.
+
+//
+// Inputs
+//
+X = input(close, title="Data Source")
+p = input(14, title="Lookback Window", minval=1)
+
+//
+// Calc
+//
+r   = ((highest(X, p) - X) / (highest(X, p) - lowest(X, p)) * -1) + 1
+cci = cci(X, p) / 100 
+
+//
+// Plotting
+//
+col_up = #0094FF, col_dn = #FF6A00
+bgcolor(cci>.80 ? green : cci<-.80 ? red : na, transp=90) 
+plot(.8, color=silver, transp=0)
+plot(.5, color=silver, transp=0)
+plot(.2, color=silver, transp=0)
+plot(r, style=line, color=col_up, linewidth=1, transp=0)

@@ -1,0 +1,127 @@
+//@version=3
+study("Dual Thrust Trading Algorithm", "DTTA", true)
+
+// The Dual Thrust trading algorithm is a famous strategy developed by Michael Chalek. 
+// It has been commonly used in futures, forex and equity markets. 
+// The idea of Dual Thrust is similar to a typical breakout system, 
+// however dual thrust uses the historical price to construct update the look back period - 
+// theoretically making it more stable in any given period.
+
+// see: https://www.quantconnect.com/tutorials/strategy-library/dual-thrust-trading-algorithm
+
+//
+// Inputs
+//
+src  = input(close, title="Data source")
+p    = input(20,  title="Lookback Window", minval=1)
+mult = input(2.0, title="Multiplier", minval=0.001, maxval=50)
+algo = input(2,   title="Exploit DTTA algorithm #:", options=[1, 2])
+mlen = input(5,   title="DTTA Lookback Window M") // 4
+nlen = input(14,  title="DTTA Lookback Window N") // 20
+k    = input(0.9, title="DTTA Coeff", step=0.01) // .7, .9
+disc = input(0.55, title="DTTA Coeff Trending discount", step=0.01) //  .6
+
+//
+// Bullish/Bearish Identification
+//
+rng = close - open
+doji = rng == 0 
+uptrend = rng > 0 or doji and rng[1] > 0
+dntrend = rng < 0 or doji and rng[1] < 0
+
+//
+// Dual Thrust Trading Algorithm 
+//
+
+// At the close of the day, calculate two values: 
+// the highest price - the closing price, and 
+// the closing price - the lowest price. 
+// Then take the two larger ones, multiply the k values. The results are called trig-ger values.
+
+// On the second day, the opening price is recorded, 
+// and then immediately after the price exceeds (opening + trigger value),
+// or the price is lower than the (opening - trigger value), the short selling immedi-ately.
+
+// This is an inversion system without a single stop? i.e. the reverse signal is also the unwinding signal.
+
+// K1 and K2 are the parameters. 
+// When K1 is greater than K2, it is much easier to trigger the long signal and vice versa. 
+// For demonstration, here we choose K1 = K2 = 0.5. 
+// In live trading, we can still use historical data to optimize those parameters or 
+// adjust the parameters according to the market trend. 
+// K1 should be small than k2 if you are bullish on the market and k1 should be much bigger if you are bearish on the market.
+
+k1 = k, k2 = k
+if uptrend  // Assigned empirically. Should be optimized separately
+    k1 := k1 * disc  //.2
+    k2 := k2 * (1 + disc)
+if dntrend
+    k1 := k1 * (1 + disc)
+    k2 := k2 * disc //.2
+
+dtta1_algo(k1, k2, len) =>
+    hh = highest(high, len)[1]
+    hc = highest(src, len)[1]
+    lc = lowest(src, len)[1]
+    ll = lowest(low, len)[1]
+    
+    // The range is calculated based on the close, high and low over the most recent N-periods.  
+    // A position is opened when the market moves a certain range from the opening price. 
+    range = max(hh - lc, hc - ll)
+    [open + k1 * range, open - k2 * range] 
+    
+dtta2_algo(k1, k2, ml, nl) =>
+    hh = 0.0, ll = 0.0, hc = 0.0, lc = 0.0
+
+    hh := highest(high, ml)[1]
+    hc := highest(src, ml)[1]
+    lc := lowest(src, ml)[1]
+    ll := lowest(low, ml)[1]
+    
+    sellRange = (hh - lc) >= (hc - ll) ? hh - lc : hc - ll
+    
+    hh := highest(high, nl)[1]
+    hc := highest(src, nl)[1]
+    lc := lowest(src, nl)[1]
+    ll := lowest(low, nl)[1]
+    
+    buyRange = (hh - lc) >= (hc - ll) ? hh - lc : hc - ll
+    [open + k1 * buyRange, open - k2 * sellRange] 
+
+[bt1, st1] = dtta1_algo(k1, k2, mlen)
+[bt2, st2] = dtta2_algo(k1, k2, mlen, nlen)
+
+buyTrig = 0.0, sellTrig = 0.0
+if algo == 1 
+    buyTrig := bt1, sellTrig := st1
+else    
+    buyTrig := bt2, sellTrig := st2
+    
+longCondition = src >= buyTrig 
+shortCondition = src <= sellTrig 
+
+//
+// Plotting DTTA
+//
+plot(uptrend and longCondition?low:na, style=circles, linewidth=4, color=green, transp=50)
+plot(dntrend and shortCondition?high:na, style=circles, linewidth=4, color=red, transp=50)
+
+//
+// Plotting BBands
+//
+basis = sma(src, p)
+dev = mult * stdev(src, p)
+upper = basis + dev
+lower = basis - dev
+plot(basis, color=orange, linewidth=1, transp=0)
+b1=plot(upper, transp=65)
+b2=plot(lower, transp=65)
+fill(b1, b2, color=blue, transp=97)
+
+//
+// Bar Colors
+//
+cscheme=input(1, title="Bar color scheme", options=[1,2])
+clr1 = cscheme==1?black: red
+clr2 = cscheme==1?white: green
+barcolor(close < open ? clr1 : clr2)

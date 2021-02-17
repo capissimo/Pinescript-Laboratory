@@ -1,0 +1,39 @@
+//@version=4
+study("ZigZag via Renko Emulator", '', true)
+// original: Zack_the_Lego (ZTLs % Renko Emulator)
+// modification: capissimo
+
+//*** Inputs
+sp = input(false, "Show projected ATR Channel")
+
+//*** Main
+// Resolution of ATR
+res =  timeframe.period=='1'   ? .00005
+     : timeframe.period=='3'   ? .0001
+     : timeframe.period=='5'   ? .0002
+     : timeframe.period=='15'  ? .0003
+     : timeframe.period=='30'  ? .0004
+     : timeframe.period=='45'  ? .0005
+     : timeframe.period=='60'  ? .0006
+     : timeframe.period=='120' ? .0007
+     : timeframe.period=='180' ? .0008
+     : timeframe.period=='240' ? .0009
+     : timeframe.period=='D'   ? .01
+     : timeframe.period=='W'   ? .02
+     : timeframe.period=='M'   ? .03
+     : .04
+
+brick_size = close[1] * res
+brick1 = 0.0, brick2 = 0.0
+brick1 := high > nz(brick1[1], close) + brick_size ? nz(brick1[1], close) + brick_size 
+       : low <  nz(brick1[1], close) - brick_size ? nz(brick1[1], close) - brick_size
+       : nz(brick1[1],close)
+brick2 := brick1 != brick1[1] ? brick1[1] : nz(brick2[1], close)
+
+projected1 = brick1 > brick2 ? brick_size + brick1: brick1 - brick_size
+projected2 = brick1 > brick2 ? brick2 - brick_size : brick2 + brick_size
+
+clr = brick1 > brick1[2]  ? color.green : brick1 < brick1[2] ? color.red : color.silver
+plot(sp ? projected1 : na, color=color.orange)
+plot(sp ? projected2 : na, color=color.orange)
+fill(plot(brick1, color=clr, linewidth=2, title="Renko", transp=0), plot(brick2, color=clr, linewidth=2, title="Renko", transp=0), color=color.gray, transp=80)

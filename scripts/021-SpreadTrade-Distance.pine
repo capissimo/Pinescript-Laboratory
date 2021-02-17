@@ -1,0 +1,70 @@
+//@version=3
+study("SpreadTrade - Distance", "STD", false, precision=2) 
+
+// Distance Based Pair Trading Strategy (trading the spread)
+// There are three popular styles of Pair trading:
+//
+// * Distance based pair trading
+// * Correlation based pair trading
+// * Cointegration based pair trading
+//
+// In this strategy, we’ll trade the difference between the prices of the two instruments. This difference is also called spread.
+//
+// 1. Select two correlated stocks. Here we'll use the same instrument in different resolutions.
+// 2. Select a different timeframe and generate the spread by calculating the difference between the prices.
+//    For distance based pair trading, we need to (normalize the data first and then) check the distance between them.
+// 3. Define the logic to trade the spread and generate the trading signals. 
+//    In this example we’ll calulate the rolling mean and rolling standard deviation of the spread.
+//    Whenever the spread goes above its 10 period rolling mean by one standard deviation, 
+//    we’ll short the spread expecting the mean reversion behaviour to hold true. 
+//    And whenever the spread goes below its 10 period rolling mean by one standard deviation, we’ll go long on the spread.
+// https://analyticsprofile.com/algo-trading/pair-trading-part-1-code-distance-based-pair-trading-strategy-in-r/
+
+//
+// Funtions
+//
+
+euclid(v, w, p) => sqrt(sum(pow(v - w, 2), p))
+manhattan(u, v, p) =>  sum(abs(u - v), p)
+
+scaleMinimax(X, p, min, max) => 
+    hi  = highest(X, p), lo  = lowest(X, p)
+    (max - min) * (X - lo)/(hi - lo) + min
+
+//
+// Inputs
+//
+X = input(close, title="Data source")
+p = input(10, title="Lookback for mean & std")
+mult = input(.6, step=.1, title="Multiplier for mean & std")
+dtype = input("Spread", options=["Manhattan weighted", "Euclid weighted", "Manhatten", "Euclid", "Spread"], title="Distance type")
+atype = input("WMA", options=["WMA", "SMA"], title="Averaging type")
+customReso = input("10", title="Time frame", options=["01", "03", "05", "10", "15", "20", "30", "45", "60"])  
+use_mid = input(false, title="Show middle line") 
+
+//
+// Main
+//
+MIN = -1, MAX = 1
+Y = security(tickerid, customReso, X[1], barmerge.gaps_off, barmerge.lookahead_on)
+
+mw = scaleMinimax(manhattan(X, Y, p), p, -1, 1) * scaleMinimax(volume, p, -1, 1)
+ew = scaleMinimax(euclid(X, Y, p), p, -1, 1) * scaleMinimax(volume, p, -1, 1)
+diff = dtype=="Manhattan weighted" ? mw : dtype=="Euclid weighted" ? ew : dtype=="Manhattan" ? manhattan(log(X), log(Y), p) : dtype=="Euclid" ? euclid(log(X), log(Y), p) : log(X) - log(Y)
+
+dynamic_mean = atype=="WMA" ? wma(diff, p) : sma(diff, p)
+dynamic_std = stdev(diff, p)
+ubound = dynamic_mean + mult*dynamic_std
+lbound = dynamic_mean - mult*dynamic_std
+
+signal = diff > ubound ? MAX : diff < lbound ? MIN : (MIN+MAX) / 2
+buy = signal==MAX and signal[1]!=MAX
+sell = signal==MIN and signal[1]!=MIN
+
+plot(ubound, color=red)
+plot(lbound, color=green)
+plot(use_mid ? (ubound+lbound)/2 : na, color=silver, transp=70)
+plot(diff)
+
+plot(buy?diff:na, style=circles, color=green, linewidth=3)
+plot(sell?diff:na, style=circles, color=red, linewidth=3)

@@ -1,0 +1,27 @@
+//@version=4
+study("Forecasting: Seasonal Naive Method", '', true, precision=2)
+
+// author: capissimo
+
+// Naive Method with Seasonality
+// The idea behind naive method with seasonality is to take last value 
+// from same season and treat it as a forecast.
+// To complete the picture its counterpart, naive method without seasonality,
+// involves taking last mean value, i.e forecast = sma(x, p)[1]
+
+//*** Inputs
+price = input(close, "Price Data")
+p     = input(5,     "Season",  options=[5, 21, 63, 126, 252,   7, 30, 90, 180, 365])
+fp    = input(15,    "Forecasted Periods", minval=1)
+
+//*** Main
+simply_naive(x, p) => sma(x, p)[1]
+
+seasonal_naive(x, p) => x[p]
+
+forecast = seasonal_naive(price, p) 
+
+var line fl = na
+line.delete(fl[1])
+fl := line.new(time, close, time + 60 * 60 * 24 * fp, forecast, 
+               xloc.bar_time, extend=extend.none, style=line.style_solid, color=color.blue, width=2)

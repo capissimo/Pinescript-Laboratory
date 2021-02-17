@@ -1,0 +1,33 @@
+//@version=3
+study(title="Volatility Indicator", shorttitle="V-Ind")
+
+// The Volatility Index measures the market volatility by plotting a 
+// smoothed average of the True Range 
+// (Based on HPotter's idea (https://ru.tradingview.com/script/7BhEvJaX-Volatility/),
+// it returns an average of the TrueRange over a specific number of bars. 
+// Here the result is passed through the Fisher's transform and normalized to 0/1-range.
+//
+// This indicator may be used to identify stretches in the price movements, suitable for entry.
+
+ifisher(src, len) =>
+    hi = highest(src, len)
+    lo = lowest(src, len)
+    value0 = 0.0, ifisher = 0.0
+    value0 := .66 * ((src - lo) / max(hi - lo, .001) - .5) + .67 * nz(value0[1])
+    value1 = value0 > .99 ? .999 : value0 < -.99 ? -.999 : value0  //round
+    ifisher := .5 * log((1 + value1) / max(1 - value1, .001)) + .5 * nz(ifisher[1])
+    ifisher
+    
+normalize(src, len) =>
+    hi  = highest(src, len)
+    lo  = lowest(src, len)
+    res = (src - lo)/(hi - lo)
+    
+len = input(2, minval=1) // 5
+resCustom = input(title="Timeframe", type=resolution, defval="15" )
+
+xATR = atr(len)
+fish = ifisher(xATR, len)
+wave = security(tickerid, resCustom, fish) /// 15 + 0.5  //ln
+
+plot(normalize(wave, 2), title="Volatility", style=line, color=xATR>xATR[1]?navy:red, linewidth=2)

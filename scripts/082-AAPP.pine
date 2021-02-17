@@ -1,0 +1,56 @@
+//@version=4
+study("AAPP", overlay=true, precision=2)
+// author: capissimo
+
+//*** Inputs
+price = input(close, "Dataset") 
+gamma = input(0.,    "Gamma", step=.1)
+fast  = input(2,     "Fast Length", minval=1)
+slow  = input(8,     "Slow Length", minval=1)
+bwma  = input(false, "Apply smoothing?")
+p     = input(3,     "Scaler Lookback")
+m     = input(-100,  "Mintick Mult")
+
+//*** Functions
+scaleMinimax(X, p, min, max) => 
+    hi = highest(X, p), lo = lowest(X, p)
+    (max - min) * (X - lo)/(hi - lo) + min
+
+scale(X, p) => scaleMinimax(X, p, lowest(close, p), highest(close, p))
+
+ppo_divergence(price, fast, slow) =>
+    up_fast   = rma(max(change(price), 0), fast)
+    down_fast = rma(-min(change(price), 0), fast)
+    rsi_fast  = down_fast == 0 ? 1 : up_fast == 0 ? 0 : 1 - (1 / (1 + up_fast / down_fast))
+
+    up_slow   = rma(max(change(price), 0), slow)
+    down_slow = rma(-min(change(price), 0), slow)
+    rsi_slow  = down_slow == 0 ? 1 : up_slow == 0 ? 0 : 1 - (1 / (1 + up_slow / down_slow))
+    [rsi_fast, rsi_slow]
+
+ama(x, pa) =>
+    er = abs(change(price, pa))/sum(abs(change(price)), pa)
+    a = 0., a := er*x+(1-er)*nz(a[1],x)
+
+aama(x, p, slow) =>
+    ma  = 0.
+    d   = cum(abs(price - nz(ma[1], price)))/bar_index * gamma
+    ma := ama(ama(price > nz(ma[1], price) + d ? price + d : price < nz(ma[1], price) - d ? price - d : nz(ma[1], price),p),p)
+    wma(ma, slow)
+
+changed(x) => x!=x[1]
+
+//*** Main
+[rsi_fast, rsi_slow] = ppo_divergence(price, fast, slow)
+divergence = scale((rsi_fast - rsi_slow)+.5, 2)
+mas        = wma(divergence, slow)
+ma         = aama(price, 2, slow)
+
+c = fixnan(ma > ma[1] ? color.blue : ma < ma[1] ? color.red : na)
+plot(bwma ? mas : na, linewidth=7, color=c, transp=60)
+plot(bwma ? na : ma, color=c, linewidth=9, transp=60)
+
+st  = 0.0
+st := changed(c) and c==color.blue ? high[1] + syminfo.mintick*m : changed(c) and c==color.red ? low[1] - syminfo.mintick*m : nz(st[1]) 
+
+plot(changed(st) ? st : st[1], color=color.blue, linewidth=2, transp=0)

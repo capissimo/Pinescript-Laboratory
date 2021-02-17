@@ -1,0 +1,89 @@
+// This source code is subject to the terms of the Mozilla Public License 2.0 at https://mozilla.org/MPL/2.0/
+// © capissimo
+
+//@version=4
+study("Support and Resistance Strategy (v.2)", '', true, precision=4, max_labels_count=200)
+
+// Support and resistance Strategy (FX and Crypto)
+// Description: This strategy uses “support” S and “resistance” R levels and MTF Candlestick (© agekara)
+// See my Support and Resistance Strategy and MTF Candlestick by agekara.
+// In addition, it uses rsi values at turning points to show the strength of the move.
+
+// Style tags: Trend Following, Trend Analysis
+// Asset class: Equities, Futures, ETFs, Currencies and Commodities
+// Dataset: FX Minutes/Hours/Days
+
+//-------------------- Global Variables
+
+var BUY = 1, var SELL = -1
+
+//-------------------- Custom Functions
+
+cGreen(g) => g>9?#006400:g>8?#1A741A:g>7?#338333:g>6?#4D934D:g>5?#66A266:g>4?#80B280:g>3?#99C199:g>2?#B3D1B3:g>1?#CCE0CC:#E6F0E6
+cRed(g)   => g>9?#E00000:g>8?#E31A1A:g>7?#E63333:g>6?#E94D4D:g>5?#EC6666:g>4?#F08080:g>3?#F39999:g>2?#F6B3B3:g>1?#F9CCCC:#FCE6E6
+
+//-------------------- Logic
+
+C = hlc3[1]
+R = 2 * C - low[1]
+S = 2 * C - high[1]
+
+signal = 0
+signal := ohlc4 > C ? BUY : ohlc4 < C ? SELL : nz(signal[1])  
+
+startLongTrade  = change(signal) and signal==BUY 
+startShortTrade = change(signal) and signal==SELL
+endLongTrade    = ohlc4 >= R 
+endShortTrade   = ohlc4 <= S 
+
+//-------------------- Rendering
+
+plot(endLongTrade    ? high : na, style=plot.style_cross,   color=cGreen(6),  title='StopBuy',  linewidth=3)
+plot(endShortTrade   ? low  : na, style=plot.style_cross,   color=cRed(6),    title='StopSell', linewidth=3)
+
+//-------------------- Marking Module
+
+factorLength = input(14, "Factor Length")
+
+var factorLastVal = 0.0
+var factorVal = 0.
+
+factorVal := round(rsi(close, factorLength))[1]
+
+v = factorVal
+
+if startLongTrade
+    label.new(bar_index, low, text=tostring(v), textcolor=cGreen(10), color=color.new(color.white,100), size=size.small,
+              style=label.style_label_up, yloc=yloc.belowbar)
+else
+    if startShortTrade
+        label.new(bar_index, high, text=tostring(v), textcolor=cRed(10), color=color.new(color.white,100), size=size.small,
+                  style=label.style_label_down, yloc=yloc.abovebar)
+
+factorLastVal := factorVal
+
+//==================== MTF Candlestick © agekara
+
+//-------------------- Inputs
+
+show_bars = input(true, 'Show Bars?')
+reso      = input("60", 'Resolution', input.resolution)
+
+//-------------------- Logic
+
+sec_open  = security(syminfo.tickerid, reso, open, lookahead=barmerge.lookahead_on)
+sec_close = security(syminfo.tickerid, reso, close, lookahead=barmerge.lookahead_on)
+
+//-------------------- Rendering
+
+plot_open  = plot(show_bars ? sec_open  : na, color=color.black, style=plot.style_stepline, transp=20, editable=false)
+plot_close = plot(show_bars ? sec_close : na, color=color.black, style=plot.style_stepline, transp=20, editable=false)
+fill(plot_open, plot_close, sec_open <= sec_close ? color.green : color.red, 75, editable=false)
+
+//-------------------- Alerting
+
+// alertcondition(startLongTrade,  title='Buy',  message='Go long!')
+// alertcondition(startShortTrade, title='Sell', message='Go short!') 
+alertcondition(startLongTrade or startShortTrade, title='Alert', message='Deal Time!')
+
+//-------------------- Backtesting

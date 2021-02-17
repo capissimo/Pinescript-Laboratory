@@ -1,0 +1,52 @@
+//@version=4
+study("Forecasting: Quadratic Regression", '', true)
+
+// original: Alex Grover
+// modification: capissimo
+
+// This script is based on the work of Alex Grover (https://www.tradingview.com/script/CDsPknAG-Quadratic-Regression/).
+// Here it is implemented using only cum functions and in conjunction with the seasonal forecast I showed in one of my previous posts. 
+// It takes the calculated QReg curve and extends its last section (Season) into the future (Forecasted periods).
+
+// A quadratic regression is the process of finding the equation of the parabola that best fits a set of data.
+// As a result, we get an equation of the form: y = ax^^2 + bx + c where a ≠ 0.
+// See: https://www.varsitytutors.com/hotmath/hotmath_help/topics/quadratic-regression
+
+//*** Functions
+simple_mean(x, p)    => x[1] + sma(change(x, p), p)
+simply_naive(x, p)   => sma(x, p)[1]
+seasonal_naive(x, p) => x[p] + sma(change(x, p), p) // fix: added average change
+
+//*** Inputs
+price = input(close, "Dataset")
+p     = input(5,     "QReg Lookback Window", minval=2)
+sp    = input(5,     "Season",  options=[5, 21, 63, 126, 252, 3, 4, 6, 7, 8, 9, 10, 13, 15, 26, 32, 34])
+fp    = input(5,     "Forecasted Periods", minval=2)
+
+//*** Main
+x1 = bar_index
+x2 = pow(x1,2)
+
+s11 = cum(x2) - pow(cum(x1), 2) / bar_index
+s12 = cum(x1 * x2) - (cum(x1) * cum(x2)) / bar_index
+s22 = cum(pow(x2, 2)) - pow(cum(x2), 2) / bar_index
+sy1 = cum(price * x1) - (cum(price) * cum(x1)) / bar_index
+sy2 = cum(price * x2) - (cum(price) * cum(x2)) / bar_index
+
+x1ma = sma(x1, p)
+x2ma = sma(x2, p)
+yma  = sma(price, p)
+
+b2 = ((sy1 * s22) - (sy2 * s12)) / (s22 * s11 - pow(s12, 2))
+b3 = ((sy2 * s11) - (sy1 * s12)) / (s22 * s11 - pow(s12, 2))
+b1 = yma - b2 * x1ma - b3 * x2ma
+qreg = b1 + b2 * x1 + b3 * x2
+
+forecast = seasonal_naive(qreg, sp) //simple_mean(qreg, fp) 
+
+plot(qreg)
+
+var line fl = na
+line.delete(fl[1])
+fl := line.new(time, close, time + 60 * 60 * 24 * p, forecast, 
+               xloc.bar_time, extend=extend.none, style=line.style_solid, color=color.blue, width=2)

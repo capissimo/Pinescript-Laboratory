@@ -1,0 +1,53 @@
+//@version=4
+study("Forecasting: Vanilla Locally Weighted Regression", '', true, precision=2)
+
+// author: capissimo
+// There is not much to say - just vanilla locally weighted regression
+// see:  https://medium.com/100-days-of-algorithms/day-97-locally-weighted-regression-c9cfaff087fb
+// also: http://cs229.stanford.edu/proj2017/final-reports/5241098.pdf
+
+//*** Inputs
+price    = input(close, "Price Data")
+tf       = input(2,     "Timeframe", minval=1, maxval=1440)
+p        = input(4,     "Lookback window", minval=2)  
+tau      = input(0.8,   "Fall-off controller (tau: 10.,1.,.0,.01)", step=.01) 
+span     = input(2,     "Rising/Falling Span", minval=1)
+
+//*** Functions
+random() => second(time) * close 
+
+mean(X, p) => sum(X, p) / p
+
+dot(v, w, p) => sum(v * w, p) // dot product
+
+lsq(x, y, p) => // ordinary least squares (OLS)
+    beta = correlation(x, y, p) * stdev(y, p) / stdev(x, p)
+    alpha = mean(y, p) - beta * mean(x, p) 
+    beta * x + alpha
+
+radial_kernel(X, p, tau) =>  // gaussian kernel
+    exp(sum(pow(X - mean(X, p), 2), p) / (-2 * tau * tau))
+
+lwr(X, Y, p, tau) => // locally weighted regression - fit model: normal equations with kernel
+    xw = X * radial_kernel(X, p, tau)
+    beta = dot(dot(lsq(dot(xw, X, p), Y, p), xw, p), Y, p)
+    dot(X, beta, p)	// predict value
+    
+scaleMinimax(X, p, min, max) => 
+    hi = highest(X, p), lo = lowest(X, p)
+    (max - min) * (X - lo)/(hi - lo) + min
+
+scale(X, p) => scaleMinimax(X, p, lowest(close, p), highest(close, p))
+
+//*** Main
+sec     = price //security(syminfo.tickerid, tostring(tf), price[1], barmerge.gaps_off, barmerge.lookahead_on) 
+gendata = 1.25 * sqrt(price) + random() // generate dataset
+pred    = scale(lwr(sec, gendata, p, tau), p)
+fl      = falling(pred, span)
+rs      = rising(pred, span)
+
+c = fl ? color.red : rs ? color.lime : color.orange
+plot(pred, linewidth=2, color=c, transp=0) 
+plotshape(fl ? hl2: na, location=location.absolute, style=shape.flag, color=c, size=size.small, transp=0, offset=3, show_last=1)
+plotshape(rs ? hl2: na, location=location.absolute, style=shape.flag, color=c, size=size.small, transp=0, offset=3, show_last=1)
+plotshape(not(fl and rs) ? hl2 : na, location=location.absolute, style=shape.flag, color=c, size=size.small, transp=0, offset=3, show_last=1)

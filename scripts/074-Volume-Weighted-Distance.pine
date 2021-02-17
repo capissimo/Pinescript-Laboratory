@@ -1,0 +1,57 @@
+//@version=4
+study("Volume Weighted Distance", '', true) 
+
+// REM: oddly enough, many people forget that the scripts in PS are generally just STUDIES, 
+// i.e. exercises, experiments, trials, and do not embody a final solution. Ple treat them as intended ;))
+
+// author: capissimo
+// This script holds several useful functions from statistics and machine learning (ML) and takes measurement of a volume weighted distance
+// in order to identify local trends. It attempts at applying ML techniques to time series processing, 
+// shows how different distance measures behave and gives you an arsenal of tools for your endeavors.
+// Tested with BTCUSD.
+
+//*** Functions
+// Statistic funcs
+mean(x, p)                => sum(x, p) / p
+de_mean(x, p)             => x - mean(x, p)  // rolling mean
+dot(v, w, p)              => sum(v * w, p) 
+sum_of_squares(v, p)      => sum(pow(v,2), p)
+squared_distance(v, w, p) => sum_of_squares(v - w, p)
+variance_(x, p)           => sum_of_squares(de_mean(x, p), p) / (p - 1) // dispersion
+standard_deviation(x, p)  => sqrt(variance_(x, p))
+covariance(x, y, p)       => dot(de_mean(x, p), de_mean(y, p), p) / (p - 1)
+norm(X, p)                => (X - mean(sma(X, p), p)) / stdev(X, p)
+
+// Distance measures
+euclid(v, w, p)              => sqrt(squared_distance(v, w, p))
+manhattan(u, v, p)           => sum(abs(u - v), p)
+mahalanobis(u, v, p)         => sqrt(dot(dot(u - v, covariance(u, v, p), p), u - v, p))
+cosine_similarity(um, vm, p) => 1.0 - dot(um, vm, p) / (norm(um, p) * norm(vm, p)) 
+correl_distance(u, v, p)     =>  
+    um = u - mean(u, p), vm = v - mean(v, p)
+    1.0 - dot(um, vm, p) / (norm(um, p) * norm(vm, p))
+
+//*** Inputs
+price  = input(close, "Price Data")
+method = input("Manhattan", "Distance measure", options=["Manhattan","Euclid","Mahalanobis","Cosine Similarity","Correl Distance"])
+p      = input(2,     "Lookback Window", minval=1)
+thres  = input(10.5,  "Threshold", minval=.001, step=.1)
+
+//*** Main
+f(m) => m==method // method selector
+
+mprice = mean(price, p)
+dist  = f("Manhattan") ? manhattan(price, mprice, p)
+      : f("Euclid") ? euclid(price, mprice, p)  
+      : f("Mahalanobis") ? mahalanobis(price, mprice, p)
+      : f("Cosine Similarity") ? cosine_similarity(price, mprice, p) 
+      : correl_distance(price, mprice, p)
+wdist  = log(pow(dist * nz(volume, 1), 2))
+long   = wdist > thres and price>price[1] and price[1] <= price[2]
+short  = wdist > thres and price<price[1] and price[1] >= price[2]
+ 
+plotshape(long  ? low  : na, location=location.belowbar, style=shape.labelup, color=color.lime, size=size.small, text=" ", textcolor=color.white, transp=0, offset=-1)
+plotshape(short ? high : na, location=location.abovebar, style=shape.labeldown, color=color.red, size=size.small, text=" ", textcolor=color.white, transp=0, offset=-1)
+
+alertcondition(long,  title='Buy',  message='go long')
+alertcondition(short, title='Sell', message='go short') 

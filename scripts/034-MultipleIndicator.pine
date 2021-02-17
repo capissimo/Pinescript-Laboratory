@@ -1,0 +1,150 @@
+//@version=4
+study("MultiIndicator", '', false, precision=2)
+
+// This is just a bunch of useful funtions and 
+// a recommenation how to construct a multiindicator for the sake of economy :))
+
+//*** Functions
+mean(x, p) => sum(x, p) / p
+
+least_squares_fit(x, y, p) => // ordinary least squares (OLS)
+    beta = correlation(x, y, p) * stdev(y, p) / stdev(x, p)
+    alpha = mean(y, p) - beta * mean(x, p)
+    [alpha, beta]
+
+predict(alpha, beta, xi) => beta * xi + alpha
+
+zscore(X, p) => (X - sma(X, p)) / stdev(X, p) // get z-score
+
+minimax(X, p, mn, mx) => // Minimax normalization
+    hi = highest(X, p), lo = lowest(X, p)
+    (mx - mn) * (X - lo)/(hi - lo) + mn
+
+prev(ts, i) => // get previous
+    ts[i+1] < ts[i] and ts[i+1] < ts[i+2]
+    
+getmid(l) => // get mid-position
+    l + (l + 1 - l) / 2
+    
+//*** Inputs
+plot1 = input(true,  "***Bubbles***")
+y     = input(close, "Data Source")
+pdmn  = input(4,     "Lookback Window for Demeaned BB")  //2
+mult  = input(2.,    "StdDev Multiplier", minval=1.0, step=0.1) //3
+pcci  = input(12,    "CCI Lookback", minval=1)
+plot2  = input(true, "***ADX***")
+len    = input(12,   "DI Length", minval=1)
+lensig = input(12,   "ADX Smoothing", minval=1, maxval=50)
+plot3  = input(true, "***Market Regime***")
+pp     = input(12)
+norm   = input(90)
+sh_pri = input(false, "Show price")
+plot4  = input(true, "***RSI***")
+plot5  = input(true, "***Holt Crossover***")
+p      = input(2,    "Lookback")
+alpha  = input(0.55, "Slope (alpha)", minval=0.1, step=0.01) // .4  .7
+beta   = input(0.95, "Intercept (beta)", minval=0.2, step=0.01)  // .75  .55
+mlt    = input(0.0,  "Mult", minval=0., step=0.01)
+plot6  = input(false, "***Pos***")
+
+//*** Main
+lvl = -1.1
+gray = color.black, blue = color.teal, orange = color.purple, green=color.green
+red=color.red, silver=color.silver, navy=color.navy
+
+//*** Market Regime (favorable conditions for betting)
+lvl := lvl + 1.1
+[a, b] = least_squares_fit(y, atr(pp), pp)
+[a2, b22] = least_squares_fit(y, volume, pp)
+[a3, b3] = least_squares_fit(y, y[1], pp)
+predict_a = minimax(predict(a, b, y), norm, lvl + .3, lvl + 1 - .3)
+predict_v = minimax(predict(a2, b22, volume), norm, lvl, lvl + 1)  //a2 + normed_z * b2
+double    = (predict_a+predict_v)/2
+rule1 = double >= getmid(lvl) - .4
+rule2 = double >= getmid(lvl) - .4
+
+plot(plot3 ? getmid(lvl) : na, color=gray, transp=0)
+plot(plot3 ? predict_a : na, color=orange, linewidth=1, transp=0)
+r1 = plot(plot3 ? predict_a + minimax(close-open, 100, 0, .3) : na, color=blue, transp=0)
+r2 = plot(plot3 ? predict_a - minimax(close-open, 100, 0, .3) : na, color=blue, transp=0)
+fill(r1, r2, color=predict_a > getmid(lvl) ? blue : gray)
+
+//*** Holt Crossover
+lvl := lvl + 1.1
+y2 = security(syminfo.tickerid, "2", y, lookahead=false)
+l = 0.0, bt = 0.0
+l   := alpha * y2 + (1-alpha) * (nz(l[1]) + nz(bt[1]))  // level
+bt  := beta * (l-l[1]) + (1-beta) * nz(bt[1])          // trend /  slope
+ma = sma(cum(l), p)
+prd = minimax((cum(l) - ma) / stdev(ma, p), norm, lvl, lvl + 1)
+logret = minimax(log(prd / prd[1]) * (1 + mlt), norm, lvl +.2, lvl + 1 - .2) 
+
+plot(plot5 ? getmid(lvl) : na, color=gray, transp=0)
+plot(plot5 ? logret : na, color=orange, linewidth=1, transp=0)
+plot(plot5 ? prd : na, color=blue, linewidth=1, transp=0)
+
+//*** RSI - relative strength indicator
+lvl := lvl + 1.1
+r = minimax(rsi(y, 2), norm, lvl, lvl + 1)
+logret2 = minimax(log(prd / prd[1]) * (1 + mlt), norm, lvl +.2, lvl + 1 - .2) 
+cros = cross(r, getmid(lvl))
+rule1 := rule1 and (r > lvl + .8 or r < lvl + .2)
+rule2 := rule2 and cros
+
+plot(plot4 ? lvl + .95 : na, color=silver, transp=0)
+plot(plot4 ? getmid(lvl) : na, color=gray, transp=0)
+plot(plot4 ? lvl + .05 : na, color=silver, transp=0)
+plot(plot4 ? r : na, linewidth=1, color=blue, transp=0)
+plot(plot4 ? logret2 : na, linewidth=1, color=orange, transp=0)
+
+//*** ADX - average directional index (trend strength indicator)
+lvl := lvl + 1.1
+up   = change(log(high))
+down = -change(log(low))
+trur = rma(log(tr), len)
+plus  = minimax(zscore(fixnan(100 * rma(up > down and up > 0 ? up : 0, len) / trur), len), len, lvl, lvl + 1)
+minus = minimax(zscore(fixnan(100 * rma(down > up and down > 0 ? down : 0, len) / trur), len), len, lvl, lvl + 1)
+sum = plus + minus 
+adx = minimax(zscore(100 * rma(abs(plus - minus) / (sum == 0 ? 1 : sum), lensig), lensig), lensig, lvl, lvl + 1)
+rule1 := rule1 and cross(plus, minus)
+rule2 := rule2 and cross(plus, minus)
+
+plot(plot2 ? getmid(lvl) : na, color=gray, transp=0)
+p1 = plot(plot2 ? plus : na, color=red, title="+DI", linewidth=1, transp=0)
+p2 = plot(plot2 ? minus : na, color=green, title="-DI", linewidth=1, transp=0)
+fill(p1, p2, color=minus > plus ? green : red)
+plot(plot2 ? adx : na, color=blue, title="ADX", transp=0)  
+
+//*** Bubbles (early warning) 
+lvl := lvl + 1.1
+
+UP = 1, DOWN = 0
+demean  = y - sum(y, pdmn) / pdmn // subtract average
+demean2 = y - sum(y, pdmn+1) / (pdmn+1)
+uplo    = stdev(demean, pdmn) * mult
+cci     = minimax(zscore(cci(y, pcci) / 100, pdmn), pdmn, lvl, lvl+1)
+burst   = prev(uplo, 0) 
+rule1 := rule1 and (cci>lvl+.9 or cci<lvl+.1)
+rule2 := rule2 and (cci>lvl+.9 or cci<lvl+.1)
+
+plot(plot1 ? getmid(lvl) : na, color=gray, transp=0)
+plot(plot1 ? minimax(zscore(demean, pdmn), pdmn, lvl, lvl+1) : na, color=orange, linewidth=1, transp=0)
+plot(plot1 ? minimax(zscore(demean2, pdmn), pdmn, lvl, lvl+1) : na, color=blue, linewidth=1, transp=0)
+b1 = plot(plot1 ?minimax(zscore(uplo, pdmn), pdmn, lvl, lvl+1) : na, title="Upper band", color=blue, linewidth=1, transp=98)
+b2 = plot(plot1 ?minimax(zscore(-uplo, pdmn), pdmn, lvl, lvl+1) : na, title="Lower band", color=blue, linewidth=1, transp=98)
+fill(b1, b2, color=navy, transp=85)
+plot(plot1 ? lvl+1 : na, color=cci>lvl+.9 ? green : na, linewidth=2, transp=0)
+plot(plot1 ? lvl : na, color=cci<lvl+.1 ? red : na, linewidth=2, transp=0)
+
+//*** Pos Estimate
+prsi = input(2,     "Lookback", minval=1)
+usin = input(false, "Use Sin")
+r3 = minimax(rsi(y, p), norm, 0, 1)
+logret3 = minimax(log(prd / prd[1]) * (1 + mlt), norm, 0 +.2, 1 - .2) 
+cros2 = cross(r3, .5)
+pos = falling(close, 3) and (abs(low[2]-low[1])+abs(low[1]-low))/2 > abs(high[1]-high) ? 0 : rising(close, 3) and (abs(low[2]-low[1])+abs(low[1]-low))/2 < abs(high[1]-high) ? 1 : 0.5
+pos := pos == .5 and cros2 and falling(r3, 2) ? 0 : pos == .5 and cros2 and rising(r3, 2) ? 1 : pos
+translateY = minimax((sin(time * 1) * pos) + 1, norm, -1, 0) //* cos(time)
+
+plot(plot6 ? -0.5 : na, color=gray, linewidth=1, transp=0)
+plot(plot6 ? usin ? translateY : pos-1 : na, color=blue, linewidth=1, transp=0)

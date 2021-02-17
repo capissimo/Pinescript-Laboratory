@@ -1,0 +1,17 @@
+//@version=3
+study("Mean Reversion Algorithm", '', true)
+
+average(src, len) => sum(src, len) / len
+
+src = input(close)
+mean_period_short=input(5)
+mean_period_long=input(20)
+buy_threshold=input(1., step=0.01)
+sell_threshold=input(1., step=0.01)
+
+mean_short = average(src, mean_period_short)
+mean_long = average(src, mean_period_long)
+beta = mean_short / mean_long
+
+plotshape(hlc3 > mean_long and beta > buy_threshold, location=location.bottom, style=shape.square, color=green, transp=70)
+plotshape(hlc3 < mean_short and beta < sell_threshold, location=location.bottom, style=shape.square,  color=red, transp=70)

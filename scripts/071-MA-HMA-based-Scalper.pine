@@ -1,0 +1,85 @@
+//@version=4
+study("JMA-HMA-based Scalper (ps4)", '', true)
+// compilation: capissimo
+
+// DISCLAIMER: 
+
+// The Following indicator/code IS NOT intended to be a formal investment advice or 
+// recommendation by the author, nor should be construed as such. Users will be fully 
+// responsible by their use regarding their own trading vehicles/assets. 
+
+// The embedded code and ideas within this work are FREELY AND PUBLICLY available on the Web 
+// for NON LUCRATIVE ACTIVITIES and must remain as is. 
+
+// This is an old compilation of mine suitable for scalping. 
+// To filter out the generated signals use Difference value between [0, ..., 30, ..., 60, ..., y] on the Settings menu.
+// A short description of the code follows:
+// The logic of the script is confined within the lines 45 through 57. Lines 46 and 47 define an upper and a lower bands
+// as well a direction of the current trend. Lines 49..55 define boolean terms for the long and short conditions. 
+// The bothup and bothdown variables indicate if the direction of the bands coincides. 
+// The presqueeze variable tries to identify if the bands converge, and the widen variable does the opposite. 
+// The diff, prev and curr variables are obvious - they hold the difference value, previous and current values of the times series in question.
+
+//*** Functions
+jma(src, len) =>
+    beta = 0.45*(len-1)/(0.45*(len-1)+2)
+    alpha = beta
+    tmp0 = 0.0, tmp1 = 0.0, tmp2 = 0.0, tmp3 = 0.0, tmp4 = 0.0
+    tmp0 := (1-alpha)*src + alpha*nz(tmp0[1])
+    tmp1 := (src - tmp0[0])*(1-beta) + beta*nz(tmp1[1])
+    tmp2 := tmp0[0] + tmp1[0]
+    tmp3 := (tmp2[0] - nz(tmp4[1]))*((1-alpha)*(1-alpha)) + (alpha*alpha)*nz(tmp3[1])
+    tmp4 := nz(tmp4[1]) + tmp3[0]
+    
+hullma(src, len) => wma(2 * wma(src, len / 2) - wma(src, len), round(sqrt(len)))
+
+get_direction(src) => rising(src,2) ? 1 : falling(src,2) ? -1 : 0
+
+bands(varc, stdvar, lenhull) => [varc + stdvar * stdev(varc, lenhull), varc - stdvar * stdev(varc, lenhull)]
+
+//*** Inputs
+price    = input(hlc3, "Price Data")
+fast     = input(2,    "Hullma Fast Lookback (5)", minval=1) 
+slow     = input(70,   "Hullma Slow Lookback (56)", minval=1) 
+stdvar   = input(7.,   "Std Multiplier", minval=1.)
+difforig = input(0.,   "Difference (min=0.)", minval=.0)  //0.0011
+use_avg  = input(false,"Use Average?")
+repnt    = input(false,"Repaint?")
+
+//*** Main
+src = security(syminfo.tickerid, tostring(timeframe.multiplier), repnt ? hlc3 : hlc3[1], lookahead=barmerge.lookahead_on)
+O   = security(syminfo.tickerid, tostring(timeframe.multiplier), repnt ? open : open[1], lookahead=barmerge.lookahead_on)
+H   = security(syminfo.tickerid, tostring(timeframe.multiplier), repnt ? high : high[1], lookahead=barmerge.lookahead_on)
+L   = security(syminfo.tickerid, tostring(timeframe.multiplier), repnt ? low : low[1], lookahead=barmerge.lookahead_on)
+C   = security(syminfo.tickerid, tostring(timeframe.multiplier), repnt ? close : close[1], lookahead=barmerge.lookahead_on)
+
+body   = C - O
+range  = H - L
+middle = (O + C) / 2
+abody  = abs(body)
+ratio  = abody / range
+longcandle   = (ratio > 0.6)
+bodytop      = max(O, C)
+bodybottom   = min(O, C)
+shadowtop    = H - bodytop
+shadowbottom = bodybottom - L
+
+smax   = jma(src, fast) - jma(src, slow)
+[upper, lower] = bands(smax, stdvar, fast)
+direction = get_direction(upper)
+
+bothup     = upper[1] < upper and lower[1] < lower
+bothdown   = upper[1] > upper and lower[1] > lower
+presqueeze = upper[2] >= upper[1] and lower[2] <= lower[1]  //upper[2]-lower[2] > upper[1]-lower[1]
+widen      = upper[1] < upper and lower[1] > lower
+diff       = upper-lower
+prev       = use_avg ? (H[1]+L[1])/2 : C[1]
+curr       = use_avg ? (H+L)/2 : C
+long       = widen and presqueeze and prev < curr and abs(diff) > difforig 
+short      = widen and presqueeze and prev > curr and abs(diff) > difforig
+
+plotshape(long,  style=shape.labelup,   location=location.belowbar, color=color.lime, size=size.tiny, title="buy", text=" ", textcolor=color.white)
+plotshape(short, style=shape.labeldown, location=location.abovebar, color=color.red,  size=size.tiny, title="sell", text=" ", textcolor=color.white)
+
+alertcondition(long,  title='Buy',  message='go long')
+alertcondition(short, title='Sell', message='go short') 

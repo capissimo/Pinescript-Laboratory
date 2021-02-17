@@ -1,0 +1,24 @@
+// This source code is subject to the terms of the Mozilla Public License 2.0 at https://mozilla.org/MPL/2.0/
+// © capissimo
+
+//@version=4
+study("SMA Dynamic", '', false)
+
+// Inputs
+price     = input(close, 'Data source')
+minlen    = input(1,     'Minimum length',  minval=1)
+maxlen    = input(2,     'Maximum length',  minval=1)
+adapt_pct = input(100.,  'Adaptation (%)',  minval=0, maxval=100) / 100.0
+p         = input(5,     'Lookback for MA', minval=1)
+
+// Calculations
+dlen = avg(minlen, maxlen)   // dynamic length
+dlen := atr(10) > atr(40) ? max(minlen, dlen * (1 - adapt_pct)) : min(maxlen, dlen * (1 + adapt_pct))
+
+d = int(dlen[0])
+
+ma1 = wma(price, p) 
+ma2 = wma(price, d) 
+
+plot(ma1, color=color.new(color.blue,0), transp=0)
+plot(ma2, color=color.new(color.orange,0), transp=0)

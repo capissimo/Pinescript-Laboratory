@@ -1,0 +1,102 @@
+//@version=4
+study("SpreadTrade: Distance (v.2)", '', false, precision=2) 
+
+// author: capissimo
+
+// Distance-Based Pair Trading Strategy (trading the spread)
+// There are three popular styles of Pair trading:
+//
+// * Distance based pair trading
+// * Correlation based pair trading
+// * Cointegration based pair trading
+//
+// This script implements the distance-based pair trading strategy in a special way.
+// In this strategy, normally they trade the difference between the prices of two instruments. 
+// This difference is also called spread. 
+// Here, however we’ll trade the difference between two time frames of one instrument. 
+// And that's the main trick.
+// Common procedure consists of the following steps:
+//
+// 1. Select two CORRELATED stocks. Here we'll use the same instrument in different TFs.
+// 2. Generate the spread by calculating the difference between the prices/instruments.
+//    For distance based pair trading, we need to (rescale the data first and then) check the distance between them.
+// 3. Define the logic to trade the spread and generate the trading signals. 
+//    In this example we’ll calculate the rolling mean and rolling standard deviation of the spread.
+//    Whenever the spread goes above a rolling mean by one standard deviation, 
+//    we’ll short the spread expecting the mean reversion behavior to hold true. 
+//    And whenever the spread goes below its rolling mean by one standard deviation, we’ll go long on the spread.
+
+// Mind that the meaning of the orange and blue signals depends on whether tf variable is smaller or larger than
+// the built-in timeframe.multiplier variable, i.e. tf of the chart.
+
+// For details see https://analyticsprofile.com/algo-trading/pair-trading-part-1-code-distance-based-pair-trading-strategy-in-r/
+
+//*** Funtions
+// Statistic funcs
+mean(x, p)                => sum(x, p) / p
+de_mean(x, p)             => x - mean(x, p)  // rolling mean
+dot(v, w, p)              => sum(v * w, p) 
+sum_of_squares(v, p)      => sum(pow(v,2), p)
+squared_distance(v, w, p) => sum_of_squares(v - w, p)
+variance_(x, p)           => sum_of_squares(de_mean(x, p), p) / (p - 1) // dispersion
+standard_deviation(x, p)  => sqrt(variance_(x, p))
+covariance(x, y, p)       => dot(de_mean(x, p), de_mean(y, p), p) / (p - 1)
+norm(x, p)                => (x - mean(x, p)) / stdev(x, p)
+T(x)                      => x    // transposition of time series is self by definition 
+
+// Distance measures
+euclid(v, w, p)              => sqrt(squared_distance(v, w, p))
+manhattan(u, v, p)           => sum(abs(u - v), p)
+mahalanobis(x, data, p)      =>  // rough, but actionable)), see https://www.machinelearningplus.com/statistics/mahalanobis-distance/
+    x_minus_mu = x - mean(data, p)
+    left_term = dot(x_minus_mu, pow(covariance(T(data), T(x), p), -1), p)
+	dot(left_term, T(x_minus_mu), p)    
+cosine_similarity(um, vm, p) => 1.0 - dot(um, vm, p) / (norm(um, p) * norm(vm, p)) 
+chebyshev(u, v, p)           => max(abs(u - v), 0) 
+braycurtis(u, v, p)          => sum(abs(u - v), p) / sum(abs(u + v), p)
+correl_distance(u, v, p)     =>  
+    um = u - mean(u, p), vm = v - mean(v, p)
+    1.0 - dot(um, vm, p) / (norm(um, p) * norm(vm, p))
+
+scaler(x, p) => (x - lowest(x, p)) / (highest(x, p) - lowest(x, p))
+
+//*** Inputs
+price  = input(close,    "Price Data")
+tf     = input(2,        "2nd Time Frame", options=[1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,20,30,45,60,120,180,240,1440])  
+p      = input(15,       "Lookback Window", minval=1)
+mult   = input(1.2,      "Multiplier for Std", step=.1)
+dtype  = input("Spread", "Distance Type", 
+       options=["Manhattan","Manhattan weighted","Euclid","Euclid weighted","Mahalanobis","Cosine Similarity","Correl","Chebyshev","Bray-Curtis","Spread"])
+atype  = input("SMA",    "Averaging", options=["WMA", "SMA"])
+repnt  = input(false,    "Repaint?")
+usemid = input(false,    "Show Middle Line?") 
+
+//*** Main
+sec  = security(syminfo.tickerid, tostring(tf), repnt ? price : price[1], barmerge.gaps_off, barmerge.lookahead_on)
+rdf  = dtype=="Manhattan weighted" ? manhattan(price, sec, p) * volume
+     : dtype=="Euclid weighted"    ? euclid(price, sec, p) * volume
+     : dtype=="Manhattan"          ? manhattan(price, sec, p)
+     : dtype=="Euclid"             ? euclid(price, sec, p) 
+     : dtype=="Cosine Similarity"  ? cosine_similarity(price, sec, p) 
+     : dtype=="Correl"             ? correl_distance(price, sec, p) 
+     : dtype=="Chebyshev"          ? chebyshev(price, sec, p) 
+     : dtype=="Bray-Curtis"        ? braycurtis(price, sec, p) 
+     : dtype=="Mahalanobis"        ? mahalanobis(price, sec, p) 
+     : log(price) - log(sec)
+
+diff   = scaler(rdf, p)  // scale rdf, the raw difference
+dynamic_mean = atype=="WMA" ? wma(diff, p) : sma(diff, p)
+dynamic_std  = stdev(diff, p)
+ubound = dynamic_mean + mult * dynamic_std
+lbound = dynamic_mean - mult * dynamic_std
+
+signal = diff > ubound ? 1 : diff < lbound ? -1 : .5
+long   = signal == 1 and signal[1] != 1
+short  = signal == -1 and signal[1] != -1
+
+plot(ubound, color=color.red, transp=0)
+plot(lbound, color=color.green, transp=0)
+plot(usemid ? avg(ubound, lbound) : na, color=color.gray, transp=0)
+plot(diff, transp=0)
+plot(long  ? diff:na, style=plot.style_circles, color=color.teal, linewidth=3, transp=0)
+plot(short ? diff:na, style=plot.style_circles, color=color.orange, linewidth=3, transp=0)

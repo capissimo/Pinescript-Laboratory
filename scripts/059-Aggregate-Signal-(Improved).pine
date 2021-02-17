@@ -1,0 +1,58 @@
+//@version=4
+study("Aggregate Signal (Improved)", '', false, precision=2)
+
+// author: capissimo, inspired by LonesomeTheBlue
+
+// Aggregate signal assembly improved. 
+// Below is an extendable engine that can produce feasible signals provided you supply non-contradicting factors.
+// Ex., the list of factors can include rsi_stoch, emo, macd, dpo, roc, accdist, cctbb, awesome, tva, and lots of others.
+
+//*** Inputs
+per      = input(22, "Lookback Window",    minval=1) 
+uthres1  = input(80, "Upper Threshold #1", minval=50, maxval=100)
+uthres2  = input(90, "Upper Threshold #2", minval=50, maxval=100)
+lthres1  = input(20, "Lower Threshold #1", minval=0, maxval=50)
+lthres2  = input(10, "Lower Threshold #2", minval=0, maxval=50)
+higherTF = input(2,  "Higher TF", minval=1) 
+
+//*** Functions
+scaler(x) => (x - lowest(x, per)) / (highest(x, per) - lowest(x, per))
+
+aggregate_signals() => // Here you can add whatever factors that you think contribute to a plausible outcome
+    O = open, H = high, L = low, C = close, V = nz(volume, .5) 
+    f1  = scaler(rsi(C, 14))                  // RSI
+    f2  = scaler(cci(C, 10))                  // CCI
+    f3  = scaler(cog(C, 14))                  // COG  
+    f4  = scaler(2 / (1 + pow(2.71828182846, -C/C[1])) - 1) // MeanSlope - mean of the absolute value of slopes
+    (f1+f2+f3+f4)/4
+    
+    // Possible factors:
+    // macd = ema(C, 8) - ema(C, 16)                             
+    // mp   = 0.5 * ((H - H[1]) / H[1] + (L - L[1]) / L[1])
+    // f21 = scaler(macd)                        // MACD
+    // f22 = scaler(macd - ema(macd, 11))        // MACD-Asprey
+    // f24 = scaler(sma(stoch(C, H, L, 14), 3))  // Stoch
+    // f26 = scaler(mom(C, 10))                  // Momentum
+    // f27 = scaler(fixnan(100 * rma(change(H) - (-change(L)), 14) / rma(tr, 14)))
+    // f28 = scaler(cum(change(C) > 0 ? V : change(C) < 0 ? -V : 0*V))     // OBV
+    // f29 = scaler(sma((((C-L) - (H-C)) / (H - L)) * V, 21) / sma(V, 21)) // Cmf
+    // f30 = scaler(sma(mp, 5) - sma(mp, 34))    // Awesome Oscillator  
+    // f31 = scaler(vwma(C, 12) - vwma(C, 26))   // Volume weighted MACD
+    // Here take the sum of the factors and divide it by their total number.
+
+//*** Main
+agg    = aggregate_signals()
+aggHTF = scaler(security(syminfo.tickerid, tostring(higherTF), agg))
+
+orange = agg > (uthres1/100) and agg < (uthres2/100) 
+red    = agg > (uthres2/100)  
+green  = agg < (lthres1/100) and agg > (lthres2/100) 
+lime   = agg < (lthres2/100) 
+
+plot(orange ? agg : na, color=color.new(color.orange, 20), style=plot.style_columns, transp=40)
+plot(red    ? agg : na, color=color.new(color.red, 20), style=plot.style_columns, transp=40)
+plot(lime   ? agg : na, color=color.new(color.lime, 20), style=plot.style_columns, transp=40)
+plot(green  ? agg : na, color=color.new(color.green, 20), style=plot.style_columns, transp=40)
+plot(not(orange or red or lime or green) ? agg : na, color=color.gray, style=plot.style_columns, transp=80)
+plot(agg, color=color.gray, transp=0)
+plot(aggHTF, color=color.blue, linewidth=1, transp=0)

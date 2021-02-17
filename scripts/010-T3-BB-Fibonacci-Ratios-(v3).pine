@@ -1,0 +1,145 @@
+//@version=3
+study("T3 Bollingers Bands Fibonacci Ratios (v.3)", "T3FiBB3 3", true)
+
+// Bollinger Bands featuring:
+// Fibo levels within BB
+// Logistic correlation for coloring uptrend/downtrend sections of BB
+// Volume-based bar coloring
+// Jurik MAs 
+
+// Jurik MA with power arg
+jmax(s, len, p) =>
+    beta = 0.45*(len-1)/(0.45*(len-1)+2)
+    alpha = pow(beta, p)
+    L0 = 0.0, L1 = 0.0, L2 = 0.0, L3 = 0.0, L4 = 0.0
+    L0 := (1-alpha)*s + alpha*nz(L0[1])
+    L1 := (s - L0[0])*(1-beta) + beta*nz(L1[1])
+    L2 := L0[0] + L1[0]
+    L3 := (L2[0] - nz(L4[1]))*((1-alpha)*(1-alpha)) + (alpha*alpha)*nz(L3[1])
+    L4 := nz(L4[1]) + L3[0]
+    L4
+
+// Kalman filter (based on Tillson MA)
+nT3Average(s, len) =>
+    xe1 = ema(s, len)
+    xe2 = ema(xe1, len)
+    xe3 = ema(xe2, len)
+    xe4 = ema(xe3, len)
+    xe5 = ema(xe4, len)
+    xe6 = ema(xe5, len)
+    b = 0.7
+    c1 = -b*b*b
+    c2 = 3*b*b+3*b*b*b
+    c3 = -6*b*b-3*b-3*b*b*b
+    c4 = 1+3*b+b*b*b+3*b*b
+    c1 * xe6 + c2 * xe5 + c3 * xe4 + c4 * xe3
+
+src = input(close)
+
+//****************************//
+//*** Logistic Correlation ***//
+//****************************//
+
+length = input(7, title="Lookback for LogCorr") // 3 5 9 14
+k = input(600, minval=1, title="Coeff for LogCorr") 
+
+corr = correlation(src, n, length)
+log = 1/(1+exp(k * -corr))
+
+//*********************//
+//*** 4 Jurik's MAs ***//
+//*********************//
+	
+use_jmas = input(true, title="Use JMA lines")
+len1 = input(18, minval=1)
+len2 = input(16, minval=1)
+len3 = input(14, minval=1)
+lent3 = input(2, minval=2)
+crosslen = input(2, minval=1)
+pow4ma = input(3)
+
+ma1 = jmax(src, len1, pow4ma)
+ma2 = jmax(src, len2, pow4ma)
+ma3 = jmax(src, len3, pow4ma)
+mabase = jmax(src, 20, pow4ma)
+macross = jmax(src, crosslen, pow4ma+2)
+mat3avg = nT3Average(src, lent3)
+mid = nT3Average(src, 20)
+
+plot(use_jmas ? ma1 : na, color=teal, linewidth=1, transp=0)
+plot(use_jmas ? ma2 : na, color=teal, linewidth=1, transp=0)
+plot(use_jmas ? ma3 : na, color=teal, linewidth=1, transp=0)
+plot(use_jmas ? mabase : na, color=navy, linewidth=2, transp=0)
+
+plot(mid, color=teal, linewidth=2, transp=0)
+plot(mid, color=orange, linewidth=2, transp=0)
+
+//***************************//
+//*** Volume-based Colors ***//
+//***************************//
+
+use_vbcolors = input(true, title="Use Volume-based colors")
+lenv = input(20, "Length for volume-based colors", minval=1)
+avrg = jmax(volume, lenv, 1)
+
+vold1 = volume > avrg*1.5 and close<open
+vold2 = volume >= avrg*0.5 and volume<=avrg*1.5 and close<open
+vold3 = volume < avrg *0.5 and close<open
+volu1 = volume > avrg*1.5 and close>open
+volu2 = volume >= avrg*0.5 and volume<=avrg*1.5 and close>open
+volu3 = volume< avrg*0.5 and close>open
+
+cold1=#A30000 //dark red
+cold2=#ff0000 //red
+cold3=#FF9797 //orange
+colu1=#2C722C //dark green
+colu2=#45b245 //green
+colu3=#B3DFB3 //lime
+color = vold1 ? cold1 : vold2 ? cold2 : vold3 ? cold3 : volu1 ? colu1 : volu2 ? colu2 : volu3 ? colu3 : na
+barcolor(use_vbcolors ? color : close < open ? black : white)
+
+//***********************************//
+//*** Fibo BB based on Tillman MA ***//
+//***********************************//
+
+lenbb = input(defval=20, minval=1)
+
+fibratio1 = input(defval=2.36, title="Fibonacci Ratio 1")
+fibratio2 = fibratio1 - 0.618
+fibratio3 = fibratio2 - 0.618
+fibratio4 = fibratio3 - 0.618
+
+midbb = nT3Average(src, lenbb)
+dev1 = fibratio1 * stdev(src, lenbb)
+dev2 = fibratio2 * stdev(src, lenbb)
+dev3 = fibratio3 * stdev(src, lenbb)
+dev4 = fibratio4 * stdev(src, lenbb)
+
+top4 = midbb+dev1
+bot4 = midbb-dev1
+top3 = midbb+dev2
+bot3 = midbb-dev2
+top2 = midbb+dev3
+bot2 = mid-dev3
+top1 = mid+dev4
+bot1 = mid-dev4
+
+t4=plot(top4, title="Upper 4", color=red, transp=50)
+t3=plot(top3, title="Upper 3", color=red, transp=100)
+t2=plot(top2, title="Upper 2", color=red, transp=100)
+t1=plot(top1, title="Upper 1", color=red, transp=100)
+b1=plot(bot1, title="Lower 1", color=green, transp=100)
+b2=plot(bot2, title="Lower 2", color=green, transp=100)
+b3=plot(bot3, title="Lower 3", color=green, transp=100)
+b4=plot(bot4, title="Lower 4", color=green, transp=50)
+md=plot(midbb, style=line, title="MA", color=orange, linewidth=2)
+fill(t4, t3, color=gray, transp=98)
+fill(t3, t2, color=gray, transp=93)
+fill(t2, t1, color=gray, transp=87)
+fill(t1, b1, color=gray, transp=80)
+fill(b1, b2, color=gray, transp=87)
+fill(b2, b3, color=gray, transp=93)
+fill(b3, b4, color=gray, transp=98)
+
+fill(md, t4, color=log > 0.5 ? lime : white)
+fill(md, b4, color=log < 0.5 ? fuchsia : white)

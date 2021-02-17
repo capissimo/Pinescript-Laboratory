@@ -1,0 +1,48 @@
+//@version=3
+study("Aroon Modified (v.3)", '', false, precision=2)
+
+// Several views of Aroon Indicator - original, binarized, smoothed and differenced.
+// More 'readable' variations of this indicator will help to appreciate its role and integrate into trading strategies more readily.
+
+// Added differenced Aroon view as well as corrected minor shortcomings
+// Todo: scale unification
+
+ifisher(src, len) =>
+    hi = highest(src, len)
+    lo = lowest(src, len)
+    value0 = 0.0, ifisher = 0.0
+    value0 := .66 * ((src - lo) / max(hi - lo, .001) - .5) + .67 * nz(value0[1])
+    value1 = value0 > .99 ? .999 : value0 < -.99 ? -.999 : value0  //round
+    ifisher := .5 * log((1 + value1) / max(1 - value1, .001)) + .5 * nz(ifisher[1])
+    ifisher
+    
+normalize(src, len) =>
+    hi  = highest(src, len)
+    lo  = lowest(src, len)
+    res = (src - lo)/(hi - lo)
+    
+//
+// Inputs
+//
+p    = input(7, title="Lookback Window", minval=1)
+type = input("Differenced Aroon", title="Indicator View", options=["Original Aroon","Binarized Aroon","Smoothed Aroon", "Differenced Aroon"])
+
+//
+// Calc
+//
+upper = 100 * (highestbars(high, p+1) + p)/p
+lower = 100 * (lowestbars(low, p+1) + p)/p
+aup   = type=="Original Aroon" ? upper : type=="Binarized Aroon" ? normalize(ifisher(upper, p), 2) : type=="Smoothed Aroon" ? normalize(ifisher(upper, p), 100) : na
+adn   = type=="Original Aroon" ? lower : type=="Binarized Aroon" ? normalize(ifisher(lower, p), 2) : type=="Smoothed Aroon" ? normalize(ifisher(lower, p), 100) : na
+diff  = upper - lower
+
+//
+// Plotting
+//
+col_up = #0094FF, col_dn = #FF6A00
+plot(type=="Binarized Aroon" ? na : type=="Original Aroon" ? 30 : type=="Differenced Aroon" ?  50 : 0.3, color=silver)
+plot(type=="Binarized Aroon" ? na : type=="Original Aroon" ? 50 : type=="Differenced Aroon" ?   0 : 0.5, color=silver)
+plot(type=="Binarized Aroon" ? na : type=="Original Aroon" ? 70 : type=="Differenced Aroon" ? -50 : 0.7, color=silver)
+plot(aup, color=type=="Original Aroon" ? col_dn : col_up, transp=0)
+plot(type=="Binarized Aroon" ? -adn : adn, color=type=="Original Aroon" ? col_up : col_dn, transp=0)
+plot(type=="Differenced Aroon" ? diff : na, color=diff > 0 ? col_up : col_dn, transp=0)

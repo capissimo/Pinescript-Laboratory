@@ -54,3 +54,4 @@ var line fl = na
 line.delete(fl[1])
 fl := line.new(time, close, time + 60 * 60 * 24 * per, f, 
                xloc.bar_time, extend=extend.none, style=line.style_solid, color=color.orange, width=2)
+

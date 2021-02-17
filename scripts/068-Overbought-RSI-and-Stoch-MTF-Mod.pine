@@ -1,0 +1,48 @@
+//@version=4
+study("Overbought RSI and Stoch MTF Mod", '', false)
+
+// author: Elgrand
+// modification: capissimo
+
+// This is a modification of the script by Elgrand 
+// (https://www.tradingview.com/script/8Bhhoexv-Elgrand-Overbought-Rsi-and-StochRsi-on-multiple-timeframes/). 
+// Using plotshape statement appears to produce a more precise outcome.
+
+//*** Inputs
+rsiSource            = input(close, "RSI Source")
+k                    = input(3,  "K", minval=1)
+d                    = input(3,  "D", minval=1)
+rsiLength            = input(14, "RSI Length", minval=1)
+stochLength          = input(14, "Stochastic Length", minval=1)
+stochOverboughtLevel = input(80, "Stochastic overbought level", minval=1)
+stochOversoldLevel   = input(20, "Stochastic oversold level", minval=1)
+rsiOverboughtLevel   = input(70, "RSI overbought level", minval=1)
+rsiOversoldLevel     = input(30, "RSI oversold level", minval=1)
+
+timeframe5           = input(5,  "Timeframe 5", minval=1)
+timeframe15          = input(15, "Timeframe 15", minval=1)
+timeframe30          = input(30, "Timeframe 30", minval=1)
+timeframe60          = input(60, "Timeframe 1H", minval=1)
+timeframe120         = input(120,"Timeframe 2H", minval=1)
+timeframe240         = input(240,"Timeframe 4H", minval=1)
+timeframe480         = input(480,"Timeframe 8H", minval=1)
+timeframe720         = input(720,"Timeframe 12H", minval=1)
+
+//*** Functions
+calculateBg(timeframe) =>
+    rsiValue   = security(syminfo.tickerid, tostring(timeframe), rsi(rsiSource, rsiLength))
+    stochK     = security(syminfo.tickerid, tostring(timeframe), sma(stoch(rsiValue, rsiValue, rsiValue, stochLength), k))
+    stochD     = security(syminfo.tickerid, tostring(timeframe), sma(stochK, d))
+    overbought = (stochK > stochOverboughtLevel or stochD > stochOverboughtLevel) and rsiValue > rsiOverboughtLevel
+    oversold   = (stochK < stochOversoldLevel or stochD < stochOversoldLevel) and rsiValue < rsiOversoldLevel
+    overbought ? color.red : oversold ? color.green : color.white
+
+//*** Main
+plotshape(1.00, "5",   shape.square, location.absolute, calculateBg(timeframe5), size=size.tiny, transp=0)
+plotshape(1.05, "15",  shape.square, location.absolute, calculateBg(timeframe15), size=size.tiny, transp=0)
+plotshape(1.10, "30",  shape.square, location.absolute, calculateBg(timeframe30), size=size.tiny, transp=0)
+plotshape(1.15, "60",  shape.square, location.absolute, calculateBg(timeframe60), size=size.tiny, transp=0)
+plotshape(1.20, "120", shape.square, location.absolute, calculateBg(timeframe120), size=size.tiny, transp=0)
+plotshape(1.25, "240", shape.square, location.absolute, calculateBg(timeframe240), size=size.tiny, transp=0)
+plotshape(1.30, "480", shape.square, location.absolute, calculateBg(timeframe480), size=size.tiny, transp=0)
+plotshape(1.35, "720", shape.square, location.absolute, calculateBg(timeframe720), size=size.tiny, transp=0)

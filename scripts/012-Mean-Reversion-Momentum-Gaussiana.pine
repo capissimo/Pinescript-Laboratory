@@ -1,0 +1,94 @@
+//@version=3
+study("Mean Reversion and Momentum - Indicator version", "MRM", false)
+
+// Mean Reversion and Momentum
+// Interpretation:
+// - Divergence means trend reversal
+// - Parallel movement means trend continuation
+// Squares above serve as a confirming signal
+
+average(src, len) => sum(src, len) / len
+
+mmax(x,y) =>
+    m = 0.0
+    for i=1 to y
+        if x[i] > m
+            m := x[i]
+    m
+    
+mmin(x,y) =>
+    m = 0.0
+    for i=1 to y
+        if x[i] < m
+            m := x[i]
+    m
+
+scale(data, num) => (data - mmin(data, num)) / (mmax(data, num) - mmin(data, num)) 
+
+fact(num)=>
+    a = 1
+    nn = num <= 1 ? 1 : num
+    for i = 1 to nn
+        a := a * i
+    a
+    
+getPoles(f, Poles, alfa)=>
+    filt = f
+    sign = 1
+    results = 0 + n//tv series spoofing
+    for r = 1 to max(min(Poles, n),1)
+	    mult  = fact(Poles) / (fact(Poles - r) * fact(r))
+	    matPo = pow(1 - alfa, r)
+        prev  = nz(filt[r-1],0)
+        sum   =  sign * mult * matPo * prev
+        results := results + sum
+        sign  := sign * -1
+    results := results - n
+    results
+    
+gauss(Price, Lag, Poles)=>
+    Pi = 2 * asin(1)
+    beta = (1 - cos(2 * Pi / Lag)) / ( pow (sqrt(2), 2.0 / Poles) - 1)
+    alfa = -beta + sqrt(beta * beta +  2 * beta)
+    pre = nz(Price, 0) * pow(alfa, Poles) 
+    filter = pre
+    result = n > 0 ?  getPoles(nz(filter[1]), Poles, alfa) : 0
+    filter := pre + result
+    
+src = input(close)
+
+// Mean reversion confirmation signals
+mean_period_short=input(2) //5
+mean_period_long=input(8)  //20
+buy_threshold=input(1., step=0.01)
+sell_threshold=input(1., step=0.01)
+
+mean_short = average(src, mean_period_short)
+mean_long = average(src, mean_period_long)
+beta = mean_short / mean_long
+
+plotshape(hlc3 > mean_long and beta > buy_threshold, location=location.top, style=shape.square, color=green, transp=70)
+plotshape(hlc3 < mean_short and beta < sell_threshold, location=location.top, style=shape.square,  color=red, transp=70)
+
+// Indicator Calc
+len = input(20, minval=2)
+tframe = input(1, minval=1)
+
+calculate_return(src, len, tf) =>
+    mean = 0.0, sd = 0.0, log_return = 0.0, mom = 0.0, reversal = 0.0
+    //calculate the mean for further use
+    mean := average(src, len)
+    //calculate the standard deviation
+    sd := stdev(src, len)
+    // take the return as depend variable
+    log_return := src - src[tf*1]
+    // calculate the reversal factor
+    reversal := (src[tf*1] - mean)/sd
+    // calculate the momentum factor
+    mom := src[1] - src[tf*4]
+    [mean, sd, log_return, reversal, mom]
+
+[mean, sd, log_return, reversal, mom] = calculate_return(src, len, tframe)
+
+plot(scale(gauss(log_return,len,2),300), linewidth=2, color=green, transp=0)
+plot(scale(gauss(mom,len, 2),300), linewidth=2, color=red, transp=0)

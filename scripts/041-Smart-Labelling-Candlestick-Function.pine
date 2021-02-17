@@ -1,0 +1,51 @@
+//@version=4
+study("Smart Labelling: Candlestick Function", '', true, precision=2)
+
+// Oftentimes a single look at the candlestick configuration happens to be enough to understand what is going on.
+// The chandlestick function is an experiment in smart labelling that produces candles for various time frames,
+// not only for the fixed 1m, 3m, 5m, 15m, etc. ones, and helps in decision-making when eye-balling the chart.
+// Mind that since this is an experiment, the function does not cover all possible combinations.
+// In some time frames the produced candles overlap. This is a todo item for those who are unterested.
+// For instance, the current version covers the following TFs:
+// Chart - TF in the script
+// 1m    -  1-20,24,30,32
+// 3m    -  1-10
+// 5m    -  1-4,6,9,12,18,36
+// 15m   -  1-4,6,12
+// Tested chart TFs: 1m,3m,5m,15m. Tested securities: BTCUSD, EURUSD
+
+tf   = input(15,   "Time Frame") 
+b_lh = input(true, "Show High-Low Prediction")
+
+start = security(syminfo.tickerid, tostring(tf), time, lookahead = true)
+new_session = change(start) ? 1 : 0
+o = open, o := new_session ? open : nz(o[1], open)
+l = low,  l := new_session ? low  : min(low, nz(l[1], low))
+h = high, h := new_session ? high : max(high, nz(h[1], high))
+c = close
+
+var int mid = (tf==1?1:tf/2+1)               // mid-point for a candle shadow (wick); even-sized spans cause mid shifting by 1 pos
+var float H = na, H := highest(high[1], tf)  // max for a candle shadow
+var float L = na, L := lowest(low[1], tf)    // min for a candle shadow
+
+draw_candlestick(x1, y1, x2, y2, mid) =>
+    //    (x1,y2) Side2 (x2, y2)
+    //          +-------+
+    //   Side1  ¦       ¦ Side3
+    //          +-------+
+    //    (x1,y1) Side4 (x2, y1)
+    clr = y1 > y2 ? color.red : color.green
+    line.new(x1=x1, y1=y1, x2=x1, y2=y2, xloc=xloc.bar_time, extend=extend.none, color=clr, style=line.style_solid, width=1) // vert
+    line.new(x1=x1, y1=y2, x2=x2, y2=y2, xloc=xloc.bar_time, extend=extend.none, color=clr, style=line.style_solid, width=1)
+    line.new(x1=x2, y1=y2, x2=x2, y2=y1, xloc=xloc.bar_time, extend=extend.none, color=clr, style=line.style_solid, width=1) // vert
+    line.new(x1=x2, y1=y1, x2=x1, y2=y1, xloc=xloc.bar_time, extend=extend.none, color=clr, style=line.style_solid, width=1)
+    line.new(x1=mid, y1=L, x2=mid, y2=H, xloc=xloc.bar_index, extend=extend.none, color=clr, style=line.style_solid, width=1) // mid vert
+
+if change(time(tostring(tf*timeframe.multiplier))) != 0
+    draw_candlestick(time[tf], o[tf], time[1], c[1], bar_index[mid])
+
+    if b_lh
+        lh = line.new(bar_index[1], l[1], bar_index[tf], h[tf], color=color.red, width=2)
+        line.delete(lh[1])
+        ll = line.new(bar_index[1], h[1], bar_index[tf], l[tf], color=color.green, width=2)
+        line.delete(ll[1])

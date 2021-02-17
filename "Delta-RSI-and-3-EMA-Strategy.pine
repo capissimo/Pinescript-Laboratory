@@ -1,0 +1,364 @@
+//@version=4
+study("Delta-RSI & 3-EMA Strategy", "", true)
+
+// Description:
+
+// This is a two-in-one Strategy using:
+//     Delta-RSI Oscillator © tbiktag
+//     3-EMA                © Bjorgum
+
+// All regards to the above authors ))
+
+//==================== Delta-RSI Oscillator © tbiktag
+
+//-------------------- Inputs
+
+rsi_l         = input(21,              "RSI Length",             minval=1)
+degree        = input(2,               "D-RSI Polynomial Order", minval=1)
+window        = input(21,              "D-RSI Frame Length (must be greater than Order)", minval=2)
+signalLength  = input(9,               "D-RSI Signal Length",    minval=1)
+islong        = input(true,            "Show Buy Signals")
+isshort       = input(true,            "Show Sell Signals")
+showendlabels = input(false,           "Show Exit Signals")
+buycond       = input("Zero-Crossing", "Entry Condition for Buy",  options=["Zero-Crossing","Signal Line Crossing","Direction Change"])
+sellcond      = input("Zero-Crossing", "Entry Condition for Sell", options=["Zero-Crossing","Signal Line Crossing","Direction Change"])
+endcond       = input("Zero-Crossing", "Exit Condition",           options=["Zero-Crossing","Signal Line Crossing","Direction Change"])
+usenrmse      = input(false,           "Filter by Means of Root-Mean-Square Error of RSI Fitting")
+rmse_thrs     = input(10,              "RSI fitting Error Threshold, %", minval=0.0) /100
+
+//-------------------- Custom Functions
+
+matrix_get(_A,_i,_j,_nrows) =>
+    // Get the value of the element of an implied 2d matrix
+    //input: 
+    // _A :: pseudo 2d matrix _A = [[column_0],[column_1],...,[column_(n-1)]]
+    // _i :: row number
+    // _j :: column number
+    // _nrows :: integer: number of rows in the implied 2d matrix
+    array.get(_A,_i+_nrows*_j)
+
+matrix_set(_A,_value,_i,_j,_nrows) =>
+    // Set a value to the element of an implied 2d matrix
+    //input: 
+    // _A :: pseudo 2d matrix _A = [[column_0],[column_1],...,[column_(n-1)]]
+    // _value :: the new value to be set
+    // _i :: row number
+    // _j :: column number
+    // _nrows :: number of rows in the implied 2d matrix
+    array.set(_A,_i+_nrows*_j,_value)
+
+transpose(_A,_nrows,_ncolumns) =>
+    // Transpose an implied 2d matrix
+    // input:
+    // _A :: pseudo 2d matrix _A = [[column_0],[column_1],...,[column_(n-1)]]
+    // _nrows :: number of rows in _A
+    // _ncolumns :: number of columns in _A
+    // output:
+    // _AT :: pseudo 2d matrix with implied dimensions: _ncolums x _nrows
+    var _AT = array.new_float(_nrows*_ncolumns,0)
+    for i = 0 to _nrows-1
+        for j = 0 to _ncolumns-1
+            matrix_set(_AT, matrix_get(_A,i,j,_nrows),j,i,_ncolumns)
+    _AT
+
+multiply(_A,_B,_nrowsA,_ncolumnsA,_ncolumnsB) => 
+    // Calculate scalar product of two matrices
+    // input: 
+    // _A :: pseudo 2d matrix
+    // _B :: pseudo 2d matrix
+    // _nrowsA :: number of rows in _A
+    // _ncolumnsA :: number of columns in _A
+    // _ncolumnsB :: number of columns in _B
+    // output:
+    // _C:: pseudo 2d matrix with implied dimensions _nrowsA x _ncolumnsB
+    var _C = array.new_float(_nrowsA*_ncolumnsB,0)
+    _nrowsB = _ncolumnsA
+    float elementC= 0.0
+    for i = 0 to _nrowsA-1
+        for j = 0 to _ncolumnsB-1
+            elementC := 0
+            for k = 0 to _ncolumnsA-1
+                elementC := elementC + matrix_get(_A,i,k,_nrowsA)*matrix_get(_B,k,j,_nrowsB)
+            matrix_set(_C,elementC,i,j,_nrowsA)
+    _C
+
+vnorm(_X,_n) =>  // square norm of vector _X with size _n
+    float _norm = 0.0
+    for i = 0 to _n-1
+        _norm := _norm + pow(array.get(_X,i),2)
+    sqrt(_norm)
+
+qr_diag(_A,_nrows,_ncolumns) => // QR Decomposition with Modified Gram-Schmidt Algorithm (Column-Oriented)
+    // input:
+    // _A :: pseudo 2d matrix _A = [[column_0],[column_1],...,[column_(n-1)]]
+    // _nrows :: number of rows in _A
+    // _ncolumns :: number of columns in _A
+    // output:
+    // _Q: unitary matrix, implied dimenstions _nrows x _ncolumns
+    // _R: upper triangular matrix, implied dimansions _ncolumns x _ncolumns
+    var _Q = array.new_float(_nrows*_ncolumns,0)
+    var _R = array.new_float(_ncolumns*_ncolumns,0)
+    var _a = array.new_float(_nrows,0)
+    var _q = array.new_float(_nrows,0)
+    float _r = 0.0
+    float _aux = 0.0
+    //get first column of _A and its norm:
+    for i = 0 to _nrows-1
+        array.set(_a,i,matrix_get(_A,i,0,_nrows))
+    _r := vnorm(_a,_nrows)
+    //assign first diagonal element of R and first column of Q
+    matrix_set(_R,_r,0,0,_ncolumns)
+    for i = 0 to _nrows-1
+        matrix_set(_Q,array.get(_a,i)/_r,i,0,_nrows)
+    if _ncolumns != 1
+        //repeat for the rest of the columns
+        for k = 1 to _ncolumns-1
+            for i = 0 to _nrows-1
+                array.set(_a,i,matrix_get(_A,i,k,_nrows))
+            for j = 0 to k-1
+                //get R_jk as scalar product of Q_j column and A_k column:
+                _r := 0
+                for i = 0 to _nrows-1
+                    _r := _r + matrix_get(_Q,i,j,_nrows)*array.get(_a,i)
+                matrix_set(_R,_r,j,k,_ncolumns)
+                //update vector _a
+                for i = 0 to _nrows-1
+                    _aux := array.get(_a,i) - _r*matrix_get(_Q,i,j,_nrows)
+                    array.set(_a,i,_aux)
+            //get diagonal R_kk and Q_k column
+            _r := vnorm(_a,_nrows)
+            matrix_set(_R,_r,k,k,_ncolumns)
+            for i = 0 to _nrows-1
+                matrix_set(_Q,array.get(_a,i)/_r,i,k,_nrows)
+    [_Q,_R]
+    
+pinv(A, nrows, ncolumns) =>   // pseudoinverse of matrix A calculated using QR decomposition
+    // Input: 
+    // A:: implied as a (nrows x ncolumns) matrix A = [[column_0],[column_1],...,[column_(ncolumns-1)]]
+    // Output: 
+    // Ainv:: array implied as a (ncolumns x nrows) matrix A = [[row_0],[row_1],...,[row_(nrows-1)]]
+    // ----
+    // First find the QR factorization of A: A = QR,
+    // where R is upper triangular matrix.
+    // Then _Ainv = R^-1*Q^T.
+    // ----
+    [Q, R] = qr_diag(A, nrows, ncolumns)
+    QT = transpose(Q, nrows, ncolumns)
+
+    var Rinv = array.new_float(ncolumns*ncolumns, 0)
+    float r = 0.0
+    matrix_set(Rinv, 1/matrix_get(R, 0, 0, ncolumns), 0, 0, ncolumns)
+    if ncolumns != 1
+        for j = 1 to ncolumns-1
+            for i = 0 to j-1
+                r := 0.0
+                for k = i to j-1
+                    r := r + matrix_get(Rinv, i, k, ncolumns)*matrix_get(R, k, j, ncolumns)
+                matrix_set(Rinv, r, i, j, ncolumns)
+            for k = 0 to j-1
+                matrix_set(Rinv, -matrix_get(Rinv, k, j, ncolumns)/matrix_get(R, j, j, ncolumns), k, j, ncolumns)
+            matrix_set(Rinv, 1/matrix_get(R, j, j, ncolumns), j, j, ncolumns)
+    //
+    Ainv = multiply(Rinv, QT, ncolumns, ncolumns, nrows)
+    Ainv
+
+norm_rmse(x, xhat) =>  // root Mean Square Error normalized to the sample mean
+    // _x.   :: array float, original data
+    // _xhat :: array float, model estimate
+    // output
+    // _nrmse:: float
+    float nrmse = 0.0
+    if array.size(x) != array.size(xhat)
+        nrmse := na
+    else
+        N = array.size(x)
+        float mse = 0.0
+        for i = 0 to N-1
+            mse := mse + pow(array.get(x, i) - array.get(xhat,i), 2)/N
+        xmean = array.sum(x)/N
+        nrmse := sqrt(mse) /xmean
+    nrmse
+    
+
+diff(src, window, degree) =>   // polynomial differentiator
+    // input:
+    // src:: input series
+    // window:: wigth of the moving lookback window
+    // degree:: degree of fitting polynomial
+    // output:
+    // diff :: series: time derivative
+    // nrmse:: normalized root mean square error
+    //
+    // Vandermonde matrix with implied dimensions (window x degree+1)
+    // Linear form: J = [ [z]^0, [z]^1, ... [z]^degree], with z = [ (1-window)/2 to (window-1)/2 ] 
+    J = array.new_float(window*(degree+1), 0)
+    for i = 0 to window-1 
+        for j = 0 to degree
+            matrix_set(J, pow(i,j), i, j, window)
+    
+    var Y_raw = array.new_float(window, na)   // Vector of raw datapoints
+    for j = 0 to window-1
+        array.set(Y_raw, j, src[window-1-j]) 
+    
+    C = pinv(J, window, degree+1)     // Calculate polynomial coefficients which minimize the loss function
+    a_coef = multiply(C, Y_raw, degree+1, window, 1)
+    
+    float diff = 0.0   // For first derivative, approximate the last point (i.e. z=window-1) by 
+    for i = 1 to degree
+        diff := diff + i*array.get(a_coef,i)*pow(window-1, i-1)
+    
+    Y_hat = multiply(J, a_coef, window, degree+1, 1)  // Calculates data estimate (needed for rmse)
+    nrmse = norm_rmse(Y_raw, Y_hat)
+    [diff, nrmse]
+
+//-------------------- Logic
+
+factor        = rsi(close, rsi_l)
+[drsi, nrmse] = diff(factor, window, degree)
+signalline    = ema(drsi, signalLength)
+
+// Conditions and filters
+
+filter_rmse = usenrmse ? nrmse<rmse_thrs : true
+dirchangeup = (drsi>drsi[1]) and (drsi[1]<drsi[2]) and drsi[1]<0.0
+dirchangedw = (drsi<drsi[1]) and (drsi[1]>drsi[2]) and drsi[1]>0.0
+crossup = crossover(drsi, 0.0)
+crossdw = crossunder(drsi, 0.0)
+crosssignalup = crossover(drsi, signalline)
+crosssignaldw = crossunder(drsi, signalline)
+
+// Signals
+
+startLongTrade  = (buycond=="Direction Change"?dirchangeup:(buycond=="Zero-Crossing"?crossup:crosssignalup)) and  filter_rmse
+startShortTrade = (sellcond=="Direction Change"?dirchangedw:(sellcond=="Zero-Crossing"?crossdw:crosssignaldw)) and  filter_rmse
+endLongTrade    = (endcond=="Direction Change"?dirchangedw:(endcond=="Zero-Crossing"?crossdw:crosssignaldw)) and filter_rmse
+endShortTrade   = (endcond=="Direction Change"?dirchangeup:(endcond=="Zero-Crossing"?crossup:crosssignalup)) and filter_rmse
+
+//-------------------- Rendering
+
+plotshape(startLongTrade  and islong  ? low : na, 'Long',  shape.labelup,   location.belowbar, #2E7C13, size=size.small) 
+plotshape(startShortTrade and isshort ? high: na, 'Short', shape.labeldown, location.abovebar, #BF217C, size=size.small)
+plotshape(showendlabels and endLongTrade  and islong  ? high: na, 'Close Long',  shape.xcross, location.abovebar, #2E7C13, size=size.tiny) 
+plotshape(showendlabels and endShortTrade and isshort ? low : na, 'Close Short', shape.xcross, location.belowbar, #BF217C, size=size.tiny)
+
+//-------------------- Notification
+
+alertcondition(startLongTrade,  'Long Signal',      'D-RSI: Long Signal')
+alertcondition(startShortTrade, 'Short Signal',     'D-RSI: Short Signal')
+alertcondition(endLongTrade,    'Exit Long Signal', 'D-RSI: Exit Long')
+alertcondition(endShortTrade,   'Exit Short Signal','D-RSI: Exit Short')
+
+//==================== 3 EMA © Bjorgum 
+
+//-------------------- Inputs
+
+srcfast  = input(open)
+emaslow  = input(5, 'EMA-Fast')
+emaslow2 = input(9, 'EMA-Medium')
+emaslow3 = input(21,'EMA-Slow')
+
+//-------------------- Logic
+
+bjemafast  = ema(hl2, 1)
+
+bjemaslow  = ema(srcfast, emaslow)
+up         = bjemaslow > bjemaslow [1]
+down       = bjemaslow < bjemaslow[1]
+mycolor    = up ? #64b5f6 : down ? #d32f2f : na
+
+bjemaslow2 = ema(srcfast, emaslow2)
+up2        = bjemaslow2 > bjemaslow2 [1]
+down2      = bjemaslow2 < bjemaslow2[1]
+mycolor2   = up2 ? #64b5f6 : down2 ? #d32f2f : na
+
+bjemaslow3 = ema(srcfast, emaslow3)
+up3        = bjemaslow3 > bjemaslow3 [1]
+down3      = bjemaslow3 < bjemaslow3[1]
+mycolor3   = up3 ? #64b5f6 : down3 ? #d32f2f : na
+
+fillData  = bjemaslow  > bjemafast
+fillData2 = bjemaslow  < bjemafast
+fillDtat  = bjemaslow2 > bjemaslow
+fillDtat2 = bjemaslow2 < bjemaslow
+fillDat   = bjemaslow3 > bjemaslow2
+fillDat2  = bjemaslow3 < bjemaslow2
+
+fillCol1 = fillData ? #ef5350 : fillData2 ? #64b5f6 : na
+fillCol2 = fillDtat ? #ef5350 : fillDtat2 ? #64b5f6 : na
+fillCol3 = fillDat  ? #ef5350 : fillDat2  ? #64b5f6 : na
+
+//-------------------- Rendering
+
+emaslowplot  = plot(bjemaslow,  'EMA-5',    mycolor,  transp=55)
+emafastplot  = plot(bjemafast,  'EMA fast', #000000,  transp=100, display=display.none)
+emaslowplot2 = plot(bjemaslow2, 'EMA-9',    mycolor2, transp=45)
+emaslowplot3 = plot(bjemaslow3, 'EMA-21',   mycolor3, transp=35)
+
+fill(emaslowplot,  emafastplot,  fillCol1, 85, "5 - Plot Fill")
+fill(emaslowplot,  emaslowplot2, fillCol2, 80, "5 - 9 Fill")
+fill(emaslowplot2, emaslowplot3, fillCol3, 75, "9 - 21 Fill")
+
+// Barcolor
+
+uc = (close > bjemaslow) and (close > bjemaslow2)
+dc = (close < bjemaslow) and (close < bjemaslow2)
+
+barColor = uc ? #64b5f6 : dc ? #e91e63 : #b2b5be
+barcolor(color=barColor)
+
+//c = cross(close, bjemaslow) and cross(close, bjemaslow2)
+//alertcondition(c, title='Alert Signal', message='Price is crossing EMAs')
+
+//-------------------- Backtesting
+
+show_info = input(true, '===Information===')
+lot_size  = input(0.01,  'Lot Size', options=[0.01,0.1,0.2,0.3,0.5,1,2,3,5,10,20,30,50,100,1000]) 
+
+tbase   = (time - time[1]) / 1000
+tcurr   = (timenow - time_close[1]) / 1000
+barlife = tcurr / tbase
+
+bidask  = (open+high+low)/3
+
+var float start_long_trade  = bidask  
+var float long_trades       = 0.
+var float start_short_trade = bidask  
+var float short_trades      = 0.
+var int   wins              = 0
+var int   trade_count       = 0
+
+if startLongTrade 
+    start_long_trade := bidask 
+if endLongTrade
+    ldiff         = (bidask - start_long_trade)
+    wins         := ldiff > 0 ? 1 : 0
+    long_trades  := ldiff * lot_size   
+    trade_count  := 1
+if startShortTrade 
+    start_short_trade := bidask
+if endShortTrade
+    sdiff         = (start_short_trade - bidask)
+    wins         := sdiff > 0 ? 1 : 0
+    short_trades := sdiff * lot_size 
+    trade_count  := 1
+    
+cumreturn   = cum(long_trades) + cum(short_trades)  //-- cumulative return 
+totaltrades = cum(trade_count)
+totalwins   = cum(wins)  
+totallosses = totaltrades - totalwins == 0 ? 1 : totaltrades - totalwins
+
+//------------------- Information
+
+var label lbl = na
+
+info =  'CR='          + tostring(cumreturn,             '#.#') 
+      + '\nTrades: '   + tostring(totaltrades,           '#')
+      + '\nWin/Loss: ' + tostring(totalwins/totallosses, '#.##') 
+      + '\nWinrate: '  + tostring(totalwins/totaltrades, '#.#%')       
+      + '\nBar Time: ' + tostring(barlife,               '#.#%')
+
+if show_info and barstate.islast  
+    lbl := label.new(bar_index, ohlc4, info, xloc.bar_index, yloc.price, 
+                     color.new(color.blue, 100), label.style_label_left, color.black, size.small, text.align_left)
+    label.delete(lbl[1])
+    

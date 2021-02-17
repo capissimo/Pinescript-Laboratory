@@ -1,0 +1,52 @@
+//@version=4
+study("Forecasting: Holt’s Linear Trend Forecasting", '', true, precision=2)
+// author: capissimo
+
+// Holt's Linear Trend Forecasting method 
+// Holt (1957) extended simple exponential smoothing to allow the forecasting of data with a trend. 
+// This method involves a forecast equation and two smoothing equations (one for the level and one for the trend): 
+// Note:
+// The TV platform omits []-notation, so the description above is incorrect. 
+// For details pls refer to the book - https://otexts.com/fpp2/holt.html.
+
+// Forecast equation: ŷ = l[1] * b[1] 
+// Level equation: l = alpha * y + (1 - alpha) * (l[1] + b[1]) 
+// Trend equation: b = beta * (l - l[1]) + (1 - beta) * b[1] 
+
+// where 
+// l (or l[0]) denotes an estimate of the level of the series at time t, 
+// b (or b[0]) denotes an estimate of the trend (slope) of the series at time t, 
+// alpha is the smoothing parameter for the level, 0 ≤ alpha ≤ 1, and 
+// beta is the smoothing parameter for the trend, 0 ≤ beta ≤ 1. 
+
+// As with simple exponential smoothing, the level equation here shows that l is a weighted average of observation y and 
+// the one-step-ahead training forecast for time t, here given by l[1]+b[1]. 
+// The trend equation shows that b is a weighted average of the estimated trend at time t based on l-l[1] and b[1], 
+// the previous estimate of the trend.
+
+// The forecast function is no longer flat but trending. The h-step-ahead forecast is equal 
+// to the last estimated level plus h times the last estimated trend value. 
+// Hence the forecasts are a linear function of h.
+
+//*** Functions
+holt(y, al, bt) =>
+    l = 0.0, b = 0.0, f = 0.0
+    l := al * y + (1-al) * (nz(l[1]) + nz(b[1]))  // level
+    b := bt * (l-l[1]) + (1-bt) * nz(b[1])        // trend 
+	f := nz(l[1]) + nz(b[1])                      // forecast
+    [l, b, f]
+    
+//*** Inputs
+price = input(close,    "Price Data")
+alpha = input(0.3,      "Slope (alpha)",    minval=0.000001, step=0.001)
+beta  = input(0.000001, "Intercept (beta)", minval=0.000001, step=0.001)
+
+//*** Main
+[l, b, f] = holt(price, alpha, beta)
+
+forcast = l + b 
+
+var line fl = na
+line.delete(fl[1])
+fl := line.new(time, close, time + 60 * 60 * 24 * 6, forcast, 
+               xloc.bar_time, extend=extend.none, style=line.style_solid, color=color.blue, width=2)

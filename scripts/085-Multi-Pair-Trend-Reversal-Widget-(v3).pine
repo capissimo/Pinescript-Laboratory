@@ -1,0 +1,96 @@
+//@version=4
+study('Multi-Pair Trend Reversal Widget (v.3)', '', false, precision=2)
+
+// author: capissimo
+
+// This is a multi-currency-pair trend reversal widget, which picks currency pairs by overbought/oversold level
+// and can be used in pair trading strategy.
+// It shows tradable currency pairs as well as anticipates corresponding trend direction.
+// Currency pairs (CPs) are ordered by importance. The first 5 CPs are highlighted (with blue bars) as majors. 
+// The additional 5 CPs are minors (in gray bars) and may be omitted.
+// Orange star indicates crossover of the middle line, the mean, with red and green stars being 
+// early warning signals of a forthcoming uptrend and downtrend, correspondingly.
+// Mind that this widget is computationally intensive, having to calculate 10 assets. 
+// Nonetheless, please look at it as my proposal for future developments of Pinescript, 
+// i.e. embedding widgets in the chart. ;)
+
+//*** Functions
+scaler(x, p) => (x - lowest(x, p)) / (highest(x, p) - lowest(x, p))
+
+hmean(x, p) => // harmonic mean, sort-of
+    a = 0., b = 0.
+    for i=1 to p
+        a := a + i * x[i-1] 
+        b  := b + x[i-1] 
+    2 * (-a / b)
+    
+asset(ds, ticker, m) => 
+    x = scaler(m=="WMA" ? wma(ds, 5) : m=="EMA" ? ema(ds, 5) : m=="SMA" ? sma(ds, 5) : m=="HarmonicMA" ? hmean(ds, 5) : ds, 5)
+    security(ticker, timeframe.period, scaler(5*x + 4*x[1] + 3*x[2] + 2*x[3] + x[4], 60))
+    
+inbounds(x, thres) => x <= (1-thres) or x >= thres or (x > .45 and x < .55)
+
+getcolor(x, thres) => x > .45 and x < .55 ? color.orange : x <= (1-thres) ? color.green : x >= thres ? color.red : na
+
+draw_label(x,y, txt, textcolor, size, show_minors) =>
+    if show_minors
+        var label Label = na
+        label.delete(Label)
+        Label := label.new(x, y, txt, color=color.new(color.white, 20), textcolor=textcolor, style=label.style_square, yloc=yloc.price, xloc=xloc.bar_time, size=size)
+
+//*** Inputs
+dataset = input(close, "Dataset")
+thres   = input(.90,   "Threshold", minval=0., maxval=1., step=.01)
+method  = input("HarmonicMA", "Detection Method", options=["HarmonicMA","EMA","SMA","WMA","None"])
+mnrs    = input(true,  "Show minors?")
+
+//*** Main
+eurusd = asset(dataset, 'EURUSD', method)
+gbpusd = asset(dataset, 'GBPUSD', method)
+usdjpy = asset(dataset, 'USDJPY', method)
+audusd = asset(dataset, 'AUDUSD', method)
+usdcad = asset(dataset, 'USDCAD', method)
+eurgbp = asset(dataset, 'EURGBP', method)
+eurjpy = asset(dataset, 'EURJPY', method)
+usdchf = asset(dataset, 'USDCHF', method)
+chfjpy = asset(dataset, 'CHFJPY', method)
+euraud = asset(dataset, 'EURAUD', method)
+
+sl = mnrs ? 50 : 25
+plot(1.2, color=color.gray, linewidth=1, transp=80, show_last=sl) 
+plot(1.,  color=color.gray, linewidth=1, transp=80, show_last=sl) 
+plot(.5,  color=color.gray, linewidth=1, transp=80, show_last=sl) 
+plot(.0,  color=color.gray, linewidth=1, transp=80, show_last=sl)
+
+plotchar(inbounds(eurusd, thres) ? 1.4 : na, char='★', location=location.absolute, color=getcolor(eurusd, thres), transp=10, offset=0, size=size.tiny, show_last=1)
+plotchar(inbounds(gbpusd, thres) ? 1.4 : na, char='★', location=location.absolute, color=getcolor(gbpusd, thres), transp=10, offset=-1*5, size=size.tiny, show_last=1)
+plotchar(inbounds(usdjpy, thres) ? 1.4 : na, char='★', location=location.absolute, color=getcolor(usdjpy, thres), transp=10, offset=-2*5, size=size.tiny, show_last=1)
+plotchar(inbounds(audusd, thres) ? 1.4 : na, char='★', location=location.absolute, color=getcolor(audusd, thres), transp=10, offset=-3*5, size=size.tiny, show_last=1)
+plotchar(inbounds(usdcad, thres) ? 1.4 : na, char='★', location=location.absolute, color=getcolor(usdcad, thres), transp=10, offset=-4*5, size=size.tiny, show_last=1)
+plotchar(mnrs and inbounds(eurgbp, thres) ? 1.4 : na, char='★', location=location.absolute, color=getcolor(eurgbp, thres), transp=10, offset=-5*5, size=size.tiny, show_last=1)
+plotchar(mnrs and inbounds(eurjpy, thres) ? 1.4 : na, char='★', location=location.absolute, color=getcolor(eurjpy, thres), transp=10, offset=-6*5, size=size.tiny, show_last=1)
+plotchar(mnrs and inbounds(usdchf, thres) ? 1.4 : na, char='★', location=location.absolute, color=getcolor(usdchf, thres), transp=10, offset=-7*5, size=size.tiny, show_last=1)
+plotchar(mnrs and inbounds(chfjpy, thres) ? 1.4 : na, char='★', location=location.absolute, color=getcolor(chfjpy, thres), transp=10, offset=-8*5, size=size.tiny, show_last=1)
+plotchar(mnrs and inbounds(euraud, thres) ? 1.4 : na, char='★', location=location.absolute, color=getcolor(euraud, thres), transp=10, offset=-9*5, size=size.tiny, show_last=1)
+
+plot(eurusd, title='EURUSD', color=color.teal, linewidth=7, style=plot.style_histogram, transp=40, histbase=0, offset=0, show_last=1)
+plot(gbpusd, title='GBPUSD', color=color.teal, linewidth=7, style=plot.style_histogram, transp=40, histbase=0, offset=-1*5, show_last=1)
+plot(usdjpy, title='USDJPY', color=color.teal, linewidth=7, style=plot.style_histogram, transp=40, histbase=0, offset=-2*5, show_last=1)
+plot(audusd, title='AUDUSD', color=color.teal, linewidth=7, style=plot.style_histogram, transp=40, histbase=0, offset=-3*5, show_last=1)
+plot(usdcad, title='USDCAD', color=color.teal, linewidth=7, style=plot.style_histogram, transp=40, histbase=0, offset=-4*5, show_last=1)
+plot(mnrs ? eurgbp : na, title='EURGBP', color=color.silver, linewidth=7, style=plot.style_histogram, transp=40, histbase=0, offset=-5*5, show_last=1)
+plot(mnrs ? eurjpy : na, title='EURJPY', color=color.silver, linewidth=7, style=plot.style_histogram, transp=40, histbase=0, offset=-6*5, show_last=1)
+plot(mnrs ? usdchf : na, title='USDCHF', color=color.silver, linewidth=7, style=plot.style_histogram, transp=40, histbase=0, offset=-7*5, show_last=1)
+plot(mnrs ? chfjpy : na, title='CHFJPY', color=color.silver, linewidth=7, style=plot.style_histogram, transp=40, histbase=0, offset=-8*5, show_last=1)
+plot(mnrs ? euraud : na, title='EURAUD', color=color.silver, linewidth=7, style=plot.style_histogram, transp=40, histbase=0, offset=-9*5, show_last=1)
+
+draw_label(time[5*0], eurusd, "EURUSD", color.black, size.tiny, mnrs)
+draw_label(time[5*1], gbpusd, "GBPUSD", color.black, size.tiny, mnrs)
+draw_label(time[5*2], usdjpy, "USDJPY", color.black, size.tiny, mnrs)
+draw_label(time[5*3], audusd, "AUDUSD", color.black, size.tiny, mnrs)
+draw_label(time[5*4], usdcad, "USDCAD", color.black, size.tiny, mnrs)
+draw_label(time[5*5], eurgbp, "EURGBP", color.black, size.tiny, mnrs)
+draw_label(time[5*6], eurjpy, "EURJPY", color.black, size.tiny, mnrs)
+draw_label(time[5*7], usdchf, "USDCHF", color.black, size.tiny, mnrs)
+draw_label(time[5*8], chfjpy, "CHFJPY", color.black, size.tiny, mnrs)
+draw_label(time[5*9], euraud, "EURAUD", color.black, size.tiny, mnrs)

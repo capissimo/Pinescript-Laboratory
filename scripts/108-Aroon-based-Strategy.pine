@@ -6,28 +6,28 @@ study('Aroon-based Strategy', '', true)
 
 //-------------------- Inputs
 
-lag       = input(9,     'Aroon Lag',        minval=1)
-HighLevel = input(85,    'Overbought Level', minval=1)
-LowLevel  = input(15,    'Oversold Level',   minval=1)
-ftype     = input('None','Filter Signals by',         options=['Volatility','Volume','Both','None'])
-af        = input(1,     'Fast ATR Lookback Window |1..n|', minval=1)
-as        = input(10,    'Slow ATR Lookback Window |2..n|', minval=2)
-holding_p = input(9,     'Holding Period |1..n|',           minval=1)
+lag       = input(9,     'Aroon Lag |1..n|',        minval=1)
+HighLevel = input(85,    'Overbought Level |1..n|', minval=1)
+LowLevel  = input(15,    'Oversold Level |1..n|',   minval=1)
+ftype     = input('None','Filter Signals by',       options=['Volatility','Volume','Both','None'])
+af        = input(1,     'Short ATR Lag |1..n|',    minval=1)
+as        = input(10,    'Long ATR Lag |2..n|',     minval=2)
+holding_p = input(9,     'Holding Period |1..n|',   minval=1)
 
 //-------------------- System Variables
 
-var BUY    = -1
-var SELL   = 1
-var HOLD   = 0
+var int BUY       = -1
+var int SELL      =  1
+var int HOLD      =  0
 
 //-------------------- Dynamic Arrays
 
-var float Bulls  = 0.0
-var float Bears  = 0.0
-var int   signal = HOLD
+var float Bulls    = 0.0
+var float Bears    = 0.0
+var int   signal   = HOLD
+var int LastTrend  = HOLD
 
-var int   hp_counter = 0
-var int   LastTrend  = 0
+var int hp_counter = 0
 
 //-------------------- Custom Functions
 
@@ -50,18 +50,18 @@ BEARS = 100 * (lowestbars(low, lag+1)   + lag) / lag
 Range = 0.0
 
 if BULLS>HighLevel and BEARS<LowLevel
-    if LastTrend == -1
+    if LastTrend == SELL
         for count=0 to 10
             Range := abs(high[count]-low[count])
         Bulls = low-(Range*0.5/10)
-    LastTrend := LastTrend + 1
+    LastTrend := BUY
 
 if BULLS<LowLevel and BEARS>HighLevel
-    if LastTrend == 1
+    if LastTrend == BUY
         for count=0 to 10 
             Range := abs(high[count]-low[count])
         Bears = high+(Range*0.5/10)
-    LastTrend := LastTrend - 1
+    LastTrend := SELL
 
 signal :=  change(LastTrend) and BULLS<LowLevel and BEARS>HighLevel and filter ? SELL 
          : change(LastTrend) and BULLS>HighLevel and BEARS<LowLevel and filter ? BUY 

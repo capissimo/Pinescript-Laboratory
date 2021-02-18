@@ -1,0 +1,43 @@
+// This source code is subject to the terms of the Mozilla Public License 2.0 at https://mozilla.org/MPL/2.0/
+// © capissimo
+
+//@version=4
+study("Volatility Arbitrage", '', false)
+
+// Volatility Arbitrage
+
+// Description:
+
+// This indicator uses rate of change (ROC) indicator together with its standard deviations.
+// ROC values are cycling around zero, i.e. around the mean. 
+// Two standard deviations of the ROC draw the upper and the lower bounds that serve as a threshold
+// that captures outliers. These outliers can be regarded as a signal.
+
+//-------------------- Inputs
+
+ds     = input(close, 'Dataset')
+roclag = input(5,     'ROC Lag       |1..n|', minval=1)
+devlag = input(20,    'Deviation Lag |1..n|', minval=1)
+mult   = input(2.0,   'Deviation Multiplier |0.1..5.0|', minval=0.1, maxval=5, step=0.1)
+
+//-------------------- Dynamic Arrays
+
+var float roc   = 0.0
+var float upper = 0.0
+var float lower = 0.0
+
+//-------------------- Logic
+
+ma     = sma(ds, 1)
+roc   := 100.0 * (ma / nz(ma[roclag]) - 1.0)
+
+dev    = stdev(roc, devlag)
+upper := dev * mult
+lower := -1.0 * upper
+
+//-------------------- Rendering
+
+hline(0)
+plot(upper, '', color.red)
+plot(lower, '', color.blue)
+plot(roc,   '', color.black)   

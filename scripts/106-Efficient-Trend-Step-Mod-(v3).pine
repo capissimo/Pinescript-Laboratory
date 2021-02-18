@@ -1,0 +1,131 @@
+// This source code is subject to the terms of the Mozilla Public License 2.0 at https://mozilla.org/MPL/2.0/
+// © capissimo
+
+//@version=4
+study('Efficient Trend Step Mod (v.3)', '', true, precision=2)
+
+// This is a version 3 of my mod of a wonderful script by alexgrover - Efficient Trend Step.
+
+// It is based on calculation of Kaufman's efficiency ratio (ER):
+
+// ER = Direction / Volatility
+// where:
+// Direction  = ABS (Close – Close[n])
+// Volatility = n ∑(ABS(Close – Close[1]))
+// n          = The efficiency ratio period.
+
+//-------------------- Inputs
+
+ds     = input(close,  'Dataset')
+p      = input(7,      'Data Lag',          minval=1, maxval=2160)
+minlag = input(3,      'Std Minimum Lag',   minval=1, maxval=2160)
+maxlag = input(15,     'Std Maximum Lag',   minval=1, maxval=2160)
+labels = input(true,   'Show Labels?')
+ftype  = input('Both', 'Filter Signals by', options=['Volatility','Volume','Both','None'])
+
+//-------------------- System Variables
+
+var color c     = na
+var float steps = 0.0
+var int   BUY   = -1
+var int   SELL  =  1
+var int   HOLD  =  0
+
+//-------------------- Dynamic Arrays
+
+var int signal = 0
+
+//-------------------- Custom Function
+
+changed(x) => x!=x[1]
+
+volumeBreak(thres) =>  
+    rsivol   = rsi(volume, 14)  
+    osc      = hma(rsivol, 10)  
+    osc > thres                     
+
+volatilityBreak(volmin, volmax) => atr(volmin) > atr(volmax)
+
+//-------------------- Logic
+
+filter =   ftype=='Volatility' ? volatilityBreak(1, 10) 
+         : ftype=='Volume'     ? volumeBreak(49) 
+         : ftype=='Both'       ? volatilityBreak(1, 10) and volumeBreak(49)
+         :                       true
+         
+er     = abs(change(ds, p)) / sum(abs(change(ds)), p)                    // efficiency ratio
+dev    = er * stdev(ds * 2, minlag) + (1 - er) * stdev(ds * 2, maxlag)   // deviation
+steps := ds > nz(steps[1]) + dev ? ds : ds < nz(steps[1]) - dev ? ds : nz(steps[1])
+c     := steps > nz(steps[1]) ? color.blue : steps < nz(steps[1]) ? color.red : nz(c[1])
+
+signal := changed(c) and c==color.blue and filter ? BUY : changed(c) and c==color.red and filter ? SELL : nz(signal[1])
+
+startLongTrade  = change(signal) and signal==BUY
+startShortTrade = change(signal) and signal==SELL
+endLongTrade    = change(signal) and signal==SELL
+endShortTrade   = change(signal) and signal==BUY
+
+//-------------------- Rendering
+
+plot(steps, '', c, 2, transp=0)
+plotshape(labels and startLongTrade  ? low  : na, '', shape.labelup,  location.belowbar,  color.blue, 0, size=size.tiny, text="B", textcolor=color.white)
+plotshape(labels and startShortTrade ? high : na, '', shape.labeldown, location.abovebar, color.red,  0, size=size.tiny, text="S", textcolor=color.white)
+
+//-------------------- Notification
+
+alertcondition(startLongTrade,  'Buy',  'Go long')
+alertcondition(startShortTrade, 'Sell', 'Go short') 
+alertcondition(startLongTrade or startShortTrade, 'General Alert', 'Deal Time!')
+
+//-------------------- Backtesting
+
+show_info = input(true, '===Information===')
+lot_size  = input(0.01,  'Lot Size', options=[0.01,0.1,0.2,0.3,0.5,1,2,3,5,10,20,30,50,100,1000]) 
+
+tbase   = (time - time[1]) / 1000
+tcurr   = (timenow - time_close[1]) / 1000
+barlife = tcurr / tbase
+
+bidask  = (open+high+low)/3
+
+var float start_long_trade  = bidask  
+var float long_trades       = 0.
+var float start_short_trade = bidask  
+var float short_trades      = 0.
+var int   wins              = 0
+var int   trade_count       = 0
+
+if startLongTrade 
+    start_long_trade := bidask 
+if endLongTrade
+    ldiff         = (bidask - start_long_trade)
+    wins         := ldiff > 0 ? 1 : 0
+    long_trades  := ldiff * lot_size   
+    trade_count  := 1
+if startShortTrade 
+    start_short_trade := bidask
+if endShortTrade
+    sdiff         = (start_short_trade - bidask)
+    wins         := sdiff > 0 ? 1 : 0
+    short_trades := sdiff * lot_size 
+    trade_count  := 1
+    
+cumreturn   = cum(long_trades) + cum(short_trades)  //-- cumulative return 
+totaltrades = cum(trade_count)
+totalwins   = cum(wins)  
+totallosses = totaltrades - totalwins == 0 ? 1 : totaltrades - totalwins
+
+//------------------- Information
+
+var label lbl = na
+
+info =  'CR='          + tostring(cumreturn,             '#.#') 
+      + '\nTrades: '   + tostring(totaltrades,           '#')
+      + '\nWin/Loss: ' + tostring(totalwins/totallosses, '#.##') 
+      + '\nWinrate: '  + tostring(totalwins/totaltrades, '#.#%')       
+      + '\nBar Time: ' + tostring(barlife,               '#.#%')
+
+if show_info and barstate.islast  
+    lbl := label.new(bar_index, ohlc4, info, xloc.bar_index, yloc.price, 
+                     color.new(color.blue, 100), label.style_label_left, color.black, size.small, text.align_left)
+    label.delete(lbl[1])

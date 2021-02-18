@@ -2,7 +2,7 @@
 // © capissimo
 
 //@version=4 
-study("MA Strategy", overlay=true, precision=4)
+study("22-MA Strategy", overlay=true, precision=4)
 
 // This is the extension of my previous script Pip Collector Mod.
 // See https://www.tradingview.com/script/FNViwnJO-Pip-collector-Mod/

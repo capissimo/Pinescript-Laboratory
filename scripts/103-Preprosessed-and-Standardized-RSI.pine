@@ -1,0 +1,162 @@
+// This source code is subject to the terms of the Mozilla Public License 2.0 at https://mozilla.org/MPL/2.0/
+// © capissimo
+
+//@version=4
+study('Preprosessed & Standardized RSI', 'PreRSI', false)
+
+// Description:
+
+// This is a preprocessed and standardized version of RSI indicator.
+// You can replace RSI with any other indicator of your choice. 
+// Use this code as a framework for your ideas.
+// Time Threshold parameter is useful in handling a repainting issue.
+// By setting it to higher values you can effectively eliminate repainting!
+// Cumulative Return, Win/Loss and Win Rate are quick & dirty performance measures 
+// helpful in tuning parameters.
+
+// Enjoy!
+
+//-------------------- Inputs
+
+ptype     = input('Close', 'Price Type',             options=['Open','High','Low','Close','HL2','OC2','OHL3','HLC3','OHLC4'])
+reso      = input('',      'Resolution',             input.resolution)
+p         = input(2,       'Lookback Window',        minval=2,   maxval=1440)
+ftype     = input('Both',  'Filter Signals by',      options=['Volatility','Volume','Both','None'])
+vmin      = input(10,      'Min Volatility Period',  minval=1,   maxval=1440)
+vmax      = input(40,      'Max Volatility Period',  minval=2,   maxval=1440)
+tthres    = input(0.999,   'Time Threshold',         minval=0.001, maxval=100, step=0.001)
+holding_p = input(1,       'Holding Period |1..n|',  minval=1,   maxval=240)
+
+//-------------------- System Variables
+
+var BUY = -1,   var SELL = 1,    var HOLD = 0
+var MIN = -2,   var MAX  = 2,    var MID  = 0
+
+//-------------------- Dynamic Arrays
+
+var int   signal     = HOLD
+var int   hp_counter = 0
+var label lbl        = na
+
+//-------------------- Custom Functions
+
+volumeBreak(thres) =>  
+    rsivol   = rsi(volume, 14)  
+    osc      = hma(rsivol, 10)  
+    osc > thres                     
+
+volatilityBreak(volmin, volmax) => atr(volmin) > atr(volmax)
+
+meanfn(x)  => cum(x) / bar_index
+varfn(x)   => cum(pow(x - meanfn(x), 2)) / (bar_index-1)
+stdfn(x)   => sqrt(varfn(x))
+znormfn(x) => (x - meanfn(x)) / stdfn(x)
+
+//-------------------- Logic
+
+tbase   = (time - time[1]) / 1000
+tcurr   = (timenow - time_close[1]) / 1000
+barlife = tcurr / tbase
+
+o  = security('', reso, (open  - sma(open,  p)) / stdev(open,  p)) / log(2)
+h  = security('', reso, (high  - sma(high,  p)) / stdev(high,  p)) / log(2)
+l  = security('', reso, (low   - sma(low,   p)) / stdev(low,   p)) / log(2)
+c  = security('', reso, (close - sma(close, p)) / stdev(close, p)) / log(2)
+
+base =  ptype=='Open'  ? o 
+      : ptype=='High'  ? h 
+      : ptype=='Low'   ? l 
+      : ptype=='Close' ? c 
+      : ptype=='OC2'   ? (o+c)/2 
+      : ptype=='HL2'   ? (h+l)/2 
+      : ptype=='OHL3'  ? (o+h+l)/3 
+      : ptype=='HLC3'  ? (h+l+c)/3 
+      :                  (o+h+l+c)/4
+
+feature = rsi(base, p)     // use your own here
+f       = znormfn(feature)
+
+filter =   ftype=='Volatility' ? volatilityBreak(vmin, vmax) 
+         : ftype=='Volume'     ? volumeBreak(49) 
+         : ftype=='Both'       ? volatilityBreak(vmin, vmax) and volumeBreak(49)
+         :                       true
+
+signal :=  crossover(c, f) and filter ? BUY : crossunder(o, f) and filter ? SELL : nz(signal[1])
+
+changed = change(signal)
+
+hp_counter := changed ? 0 : hp_counter + 1
+
+startLongTrade  = barlife > tthres and changed and signal==BUY    
+startShortTrade = barlife > tthres and changed and signal==SELL   
+endLongTrade    = (signal==BUY  and hp_counter==holding_p and not changed) or (changed and signal==SELL)
+endShortTrade   = (signal==SELL and hp_counter==holding_p and not changed) or (changed and signal==BUY)
+
+//-------------------- Rendering
+
+plot(MID,  '', color.orange)
+plot(SELL, '', color.gray)
+plot(BUY,  '', color.gray)
+plot(MAX,  '', color.red,   9, transp=50)
+plot(MIN,  '', color.green, 9, transp=50)
+
+plot(f,    '')
+
+plotshape(startLongTrade  ? MIN+.2 : na, 'Buy',  shape.labelup,   location.absolute, color.blue, size=size.tiny) 
+plotshape(startShortTrade ? MAX-.2 : na, 'Sell', shape.labeldown, location.absolute, color.red,  size=size.tiny) 
+plot(endLongTrade         ? HOLD   : na, 'StopBuy',  color.blue, 1, plot.style_cross)
+plot(endShortTrade        ? HOLD   : na, 'StopSell', color.red,  1, plot.style_cross)
+
+//-------------------- Alerting
+
+alertcondition(startLongTrade,  'Buy',  'Go long!')
+alertcondition(startShortTrade, 'Sell', 'Go short!') 
+alertcondition(startLongTrade or startShortTrade, 'General Alert', 'Deal Time!')
+
+//-------------------- Backtesting
+
+show_info = input(true,  'Display information?')
+lot_size  = input(0.01,  'Lot Size', options=[0.01,0.1,0.2,0.3,0.5,1,2,3,5,10,20,30,50,100,1000]) 
+
+bidask = (open+high+low)/3
+
+var float start_long_trade  = bidask  
+var float long_trades       = 0.
+var float start_short_trade = bidask  
+var float short_trades      = 0.
+var int   wins              = 0
+var int   trade_count       = 0
+
+if startLongTrade 
+    start_long_trade := bidask 
+if endLongTrade
+    ldiff         = (bidask - start_long_trade)
+    wins         := ldiff > 0 ? 1 : 0
+    long_trades  := ldiff * lot_size   
+    trade_count  := 1
+if startShortTrade 
+    start_short_trade := bidask
+if endShortTrade
+    sdiff         = (start_short_trade - bidask)
+    wins         := sdiff > 0 ? 1 : 0
+    short_trades := sdiff * lot_size 
+    trade_count  := 1
+    
+cumreturn   = cum(long_trades) + cum(short_trades)  //-- cumulative return 
+totaltrades = cum(trade_count)
+totalwins   = cum(wins)  
+totallosses = totaltrades - totalwins == 0 ? 1 : totaltrades - totalwins
+
+//------------------- Information
+
+info =  '\nCR='        + tostring(cumreturn,             '#.#') 
+      + '\nTrades: '   + tostring(totaltrades,           '#')
+      + '\nWin/Loss: ' + tostring(totalwins/totallosses, '#.##') 
+      + '\nWinrate: '  + tostring(totalwins/totaltrades, '#.#%')       
+      + '\nBar Time: ' + tostring(barlife,               '#.#%')
+
+if show_info and barstate.islast  
+    lbl := label.new(bar_index, HOLD, info, xloc.bar_index, yloc.price, 
+                     color.new(color.blue, 100), label.style_label_left, color.black, size.small, text.align_left)
+    label.delete(lbl[1])
+    

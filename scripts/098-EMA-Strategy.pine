@@ -1,0 +1,91 @@
+// This source code is subject to the terms of the Mozilla Public License 2.0 at https://mozilla.org/MPL/2.0/
+// © capissimo
+
+//@version=4 
+study("EMA Strategy", '', true, precision=4)
+
+// EMA Strategy aka Pip Collector Mod
+
+// This script was inspired by LazyBear's popular script
+// called Pip collector. It features custom signal generation
+// and information section displaying elapsed bar time useful 
+// for timing trades.
+
+//-------------------- Inputs
+
+ds           = input(close, 'Dataset')
+lengthCenter = input(50,    'Center EMA Length |1..n|', minval=1, maxval=2160)
+length       = input(20,    'Upper/Lower Distance from Center (PIPs) |-n..n|')
+fltr         = input(true,  'Filter Out Signals By Volatility?')
+holding_p    = input(5,     'Holding Period |1..n|',    minval=1, maxval=240)
+show_info    = input(true,  'Display information?')
+
+//-------------------- System Variables
+
+var BUY = -1
+var SELL = 1
+var HOLD = 0
+
+//-------------------- Dynamic Arrays
+
+var int   signal     = HOLD
+var int   hp_counter = 0
+var label lbl        = na
+
+//-------------------- Custom Functions
+
+cGreen(g) =>  g>9?#006400:g>8?#1A741A:g>7?#338333:g>6?#4D934D:g>5?#66A266
+             :g>4?#80B280:g>3?#99C199:g>2?#B3D1B3:g>1?#CCE0CC:#E6F0E6
+cRed(g)   =>  g>9?#E00000:g>8?#E31A1A:g>7?#E63333:g>6?#E94D4D:g>5?#EC6666
+             :g>4?#F08080:g>3?#F39999:g>2?#F6B3B3:g>1?#F9CCCC:#FCE6E6
+             
+//-------------------- Logic
+
+pip     = syminfo.mintick 
+
+ma    = ema(ds, lengthCenter)
+upper = ma + length * pip
+lower = ma - length * pip
+
+filter  = fltr ? atr(1) > atr(10) : true   //-- filter out by volatility
+signal := close > lower and filter ? BUY : close < upper and filter ? SELL : nz(signal[1])
+
+changed = change(signal)
+
+hp_counter := changed ? 0 : hp_counter + 1
+
+startLongTrade  = changed and signal==BUY    
+startShortTrade = changed and signal==SELL   
+endLongTrade    = (signal==BUY  and hp_counter==holding_p and not changed) //-- TOADD: stop by trade duration
+endShortTrade   = (signal==SELL and hp_counter==holding_p and not changed) 
+
+//-------------------- Rendering
+
+plot(ma,    'Center EMA', color.blue,  2)
+plot(lower, 'Lower',      color.red,   2)
+plot(upper, 'Upper',      color.green, 2)
+
+plotshape(startLongTrade  ? low   : na, 'Buy',  shape.labelup,   location.absolute, cGreen(7), size=size.small)
+plotshape(startShortTrade ? high  : na, 'Sell', shape.labeldown, location.absolute, cRed(7),   size=size.small)
+plot(endLongTrade         ? ohlc4 : na, 'StopBuy',  cGreen(6), 2, plot.style_cross)
+plot(endShortTrade        ? ohlc4 : na, 'StopSell', cRed(6),   2, plot.style_cross)
+
+//-------------------- Alerting
+
+alertcondition(startLongTrade,  'Buy',  'Go long!')
+alertcondition(startShortTrade, 'Sell', 'Go short!') 
+alertcondition(startLongTrade or startShortTrade, 'General Alert', 'Deal Time!')
+
+//------------------- Information
+
+// countdown in %
+tbase = (time - time[1]) / 1000
+tcurr = (timenow - time_close[1]) / 1000
+
+info = 'Bar Time: ' + tostring(tcurr / tbase, '#.#%')
+
+if show_info and barstate.islast  
+    lbl := label.new(bar_index, ohlc4, info, xloc.bar_index, yloc.price, 
+                     color.new(color.blue, 100), label.style_label_left, color.black, size.small, text.align_left)
+    label.delete(lbl[1])
+    

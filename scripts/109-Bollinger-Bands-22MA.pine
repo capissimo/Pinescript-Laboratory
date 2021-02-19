@@ -1,0 +1,271 @@
+// This source code is subject to the terms of the Mozilla Public License 2.0 at https://mozilla.org/MPL/2.0/
+// © capissimo
+
+//@version=4
+study("Bollinger Bands - 22MA", '', true)
+
+// Description:
+// This indicator uses Bollinger Bands with a set of 22 different 
+// moving averages as a center MA plus a custom signal generation and 
+// performance measurement modules.
+
+//-------------------- Inputs
+
+base      = input(close,   'Dataset')
+atype     = input('WildMA','Moving Average Type',   
+                  options=['SMA','WMA','EMA','HMA','HMA3','RMA','ALMA','VWMA','SWMA','VWAP','WildMA','REMA',
+                           'LAMA','LowPass','HighPass','SineMA','ShmMa','TMA','JMA','SSmthr','KLMF','Kahlman'])
+p         = input(20,     'Center MA Lag |1..n|',  minval=4)
+mult      = input(2.0,    'StdDev',                minval=0.001, maxval=50)
+holding_p = input(2,      'Holding Period |1..n|', minval=1,     maxval=240)
+ftype     = input('Both', 'Filter Signals by',     options=['Volatility','Volume','Both','None'])
+af        = input(1,      'Short ATR Lag |1..n|',  minval=1)
+as        = input(10,     'Long ATR Lag |2..n|',   minval=2)
+
+//-------------------- System Variables
+
+var BUY = -1
+var SELL = 1
+var HOLD = 0
+
+//-------------------- Dynamic Arrays
+
+var int signal     = HOLD
+var int hp_counter = 0
+
+//-------------------- Custom Functions
+
+volumeBreak(thres) =>  
+    rsivol   = rsi(volume, 14)  
+    osc      = hma(rsivol, 10)  
+    osc > thres                     
+
+volatilityBreak(volmin, volmax) => atr(volmin) > atr(volmax)
+
+klmf(x) =>  // Kalman filter
+    var value1 = swma(x-x[1])
+    value1 := 0.1*(x-x[1]) + 0.9*nz(value1[1])
+    var value2 = swma(tr)
+    value2 := 0.1*(tr) + 0.9*nz(value2[1])
+    lambda = abs(value1/value2)
+    alpha = (-lambda*lambda + sqrt(lambda*lambda*lambda*lambda + 16*lambda*lambda))/8
+    var klmf = 0.
+    klmf := alpha*x + (1-alpha)*nz(klmf[1])
+
+kahlman(x, g) => 
+    kf = 0.0
+    dk = x - nz(kf[1], x)
+    smooth = nz(kf[1],x)+dk*sqrt(g*2)
+    velo = 0.0
+    velo := nz(velo[1],0) + (g*dk)
+    kf := smooth+velo
+     
+wildma(x, p) =>    
+    k = 1 / p
+    wldma = 0.0
+    wldma := x * k + nz(wldma[1]) * (1-k)
+    wldma
+
+hma3(x, p) =>
+    len = p/2
+    wma(wma(x,len/3)*3 - wma(x,len/2) - wma(x,len),len)
+
+rema(x, p) => // regularized ma
+    rm = 0.0, lambda = .5, a = 2 / (p + 1)
+    rm := (nz(rm[1]) + a * (x - nz(rm[1])) + lambda * (2 * nz(rm[1]) - nz(rm[2]))) / (lambda + 1)
+    rm
+
+lowPass(x, p)=>
+    LP = x
+    sr = x
+    a = 2.0 / (1.0 + p)
+    LP := (a - 0.25 * a * a) * sr + 0.5 * a * a * nz(sr[1]) - (a - 0.75 * a * a) * nz(sr[2]) + 2.0 * (1.0 - a) * nz(LP[1]) - (1.0 - a) * (1.0 - a) * nz(LP[2])
+    LP   
+
+sinewma(x, p) =>
+    PI = 2 * asin(1)
+    sum = 0.0
+    weightSum = 0.0
+    for i = 0 to p-1
+        weight = sin(i * PI / (p + 1))
+        sum := sum + nz(x[i]) * weight
+        weightSum := weightSum + weight
+    sum/weightSum
+
+tma(x, p) =>
+    half = (p+1.0)/2.0
+    summ = x, sumw = 1, weight = 0
+    for k=1 to p
+        weight := (weight > half) ? p : 1
+        sumw := sumw + weight
+        summ := summ + weight*x[k]  
+    summ/sumw
+
+jma(x, p) =>
+    beta = 0.45*(p-1)/(0.45*(p-1)+2)
+    alpha = beta
+    L0=0.0, L1=0.0, L2=0.0, L3=0.0, L4=0.0
+    L0 := (1-alpha)*x + alpha*nz(L0[1])
+    L1 := (x - L0[0])*(1-beta) + beta*nz(L1[1])
+    L2 := L0[0] + L1[0]
+    L3 := (L2[0] - nz(L4[1]))*((1-alpha)*(1-alpha)) + (alpha*alpha)*nz(L3[1])
+    L4 := nz(L4[1]) + L3[0]
+	L4
+
+supersmoother(x, p) =>
+    pi      = 2 * asin(1)
+    s_a1    = exp(-sqrt(2) * pi / p)
+    s_b1    = 2 * s_a1 * cos(sqrt(2) * pi / p)
+    s_c3    = -pow(s_a1, 2)
+    s_c2    = s_b1
+    s_c1    = 1 - s_c2 - s_c3
+    ss      = 0.0
+    ss     := s_c1 * x + s_c2 * nz(ss[1], x[1]) + s_c3 * nz(ss[2], x[2])
+
+shmma(src, len) =>
+	factor = 0.0, slope = 0.0
+
+	for i = 1 to len
+		factor := 1 + 2 * (i - 1)
+		slope := slope + (src[i - 1]) * (len - factor) / 2
+
+	sma(src, len) + (6 * slope) / ((len + 1) * len)
+
+highpass(src, len) =>
+    a = (0.707 * 2 * 3.14159) / len
+    alpha1 = 1.0  + (sin(a) - 1.0) / cos(a)
+    b = 1.0 - alpha1 / 2.0
+    c = 1.0 - alpha1
+    hp = 0.0
+    hp := b * b * (src - 2 * nz(src[1]) + nz(src[2])) + 2 * c * nz(hp[1]) - c * c * nz(hp[2])
+    src - hp
+
+lama(ds, slag, llag) =>  // log-normal adaptive moving average
+    vix   = 100 * abs(high - low) / close  // volatility index
+    W     = log(2 / (llag + 1))
+    a     = exp(W * (1 - vix))
+    N     = (2 - a) / a
+    New_N = ((llag - slag) * ((N - 1) / (llag - 1))) + slag
+    New_a = 2 / (New_N + 1)
+    var float lama = 0.0
+    lama := nz(lama[1]) + New_a * (ds - nz(lama[1]))
+    
+//-------------------- Logic
+
+filter =   ftype=='Volatility' ? volatilityBreak(af, as) 
+         : ftype=='Volume'     ? volumeBreak(49) 
+         : ftype=='Both'       ? volatilityBreak(af, as) and volumeBreak(49)
+         :                       true
+
+ma =   atype=='SMA'        ? sma(base, p) 
+     : atype=='WMA'        ? wma(base, p) 
+     : atype=='EMA'        ? ema(base, p) 
+     : atype=='HMA'        ? hma(base, p) 
+     : atype=='HMA3'       ? hma3(base, p) 
+     : atype=='RMA'        ? rma(base, p) 
+     : atype=='ALMA'       ? alma(base, p, 0.35, 6) 
+     : atype=='VWMA'       ? vwma(base, p) 
+     : atype=='SWMA'       ? swma(base) 
+     : atype=='VWAP'       ? vwap(base) 
+     : atype=='REMA'       ? rema(base, p) 
+     : atype=='LAMA'       ? lama(base, p/4, p) 
+     : atype=='WildMA'     ? wildma(base, p) 
+     : atype=='LowPass'    ? lowPass(base, p) 
+     : atype=='HighPass'   ? highpass(base, p) 
+     : atype=='SineMA'     ? sinewma(base, p) 
+     : atype=='ShmMa'      ? shmma(base, p) 
+     : atype=='JMA'        ? jma(base, p) 
+     : atype=='TMA'        ? tma(base, p) 
+     : atype=='SSmthr'     ? supersmoother(base, p) 
+     : atype=='KLMF'       ? klmf(base) 
+     :                       kahlman(base, .001) 
+
+dev = mult * stdev(base, p)
+upper = ma + dev
+lower = ma - dev
+
+signal := close > lower and filter ? BUY : close < upper and filter ? SELL : nz(signal[1])
+
+changed = change(signal)
+
+hp_counter := changed ? 0 : hp_counter + 1
+
+startLongTrade  = changed and signal==BUY    
+startShortTrade = changed and signal==SELL   
+endLongTrade    = (changed and signal==SELL) or (signal==BUY  and hp_counter==holding_p and not changed) 
+endShortTrade   = (changed and signal==BUY)  or (signal==SELL and hp_counter==holding_p and not changed) 
+
+//-------------------- Rendering
+
+plot(ma, "Basis", color.orange)
+fill(plot(upper, "Upper", color.gray), plot(lower, "Lower", color.gray), color.silver, 95, "Background")
+
+plotshape(startLongTrade  ? low   : na, 'Buy',  shape.labelup,   location.absolute, color.blue, size=size.small)
+plotshape(startShortTrade ? high  : na, 'Sell', shape.labeldown, location.absolute, color.red,  size=size.small)
+plot(endLongTrade         ? ohlc4 : na, 'StopBuy',  color.blue, 2, plot.style_cross)
+plot(endShortTrade        ? ohlc4 : na, 'StopSell', color.red,  2, plot.style_cross)
+
+//-------------------- Notification
+
+if changed and signal==BUY 
+    alert("Buy Alert", alert.freq_once_per_bar)  // alert.freq_once_per_bar_close
+if changed and signal==SELL 
+    alert("Sell Alert", alert.freq_once_per_bar)
+    
+alertcondition(startLongTrade,  "Buy Alert",  "Go Long!")
+alertcondition(startShortTrade, "Sell Alert", "Go Short!")
+
+//-------------------- Backtesting
+
+show_info = input(true, '===Information===')
+lot_size  = input(0.01,  'Lot Size', options=[0.01,0.1,0.2,0.3,0.5,1,2,3,5,10,20,30,50,100,1000]) 
+
+tbase   = (time - time[1]) / 1000
+tcurr   = (timenow - time_close[1]) / 1000
+barlife = tcurr / tbase
+
+bidask  = (open+high+low)/3
+
+var float start_long_trade  = bidask  
+var float long_trades       = 0.
+var float start_short_trade = bidask  
+var float short_trades      = 0.
+var int   wins              = 0
+var int   trade_count       = 0
+
+if startLongTrade 
+    start_long_trade := bidask 
+if endLongTrade
+    ldiff         = (bidask - start_long_trade)
+    wins         := ldiff > 0 ? 1 : 0
+    long_trades  := ldiff * lot_size   
+    trade_count  := 1
+if startShortTrade 
+    start_short_trade := bidask
+if endShortTrade
+    sdiff         = (start_short_trade - bidask)
+    wins         := sdiff > 0 ? 1 : 0
+    short_trades := sdiff * lot_size 
+    trade_count  := 1
+    
+cumreturn   = cum(long_trades) + cum(short_trades)  //-- cumulative return 
+totaltrades = cum(trade_count)
+totalwins   = cum(wins)  
+totallosses = totaltrades - totalwins == 0 ? 1 : totaltrades - totalwins
+
+//------------------- Information
+
+var label lbl = na
+
+info =  atype
+      + '\nHPeriod: '  + tostring(holding_p,             '#') 
+      + '\nCR='        + tostring(cumreturn,             '#.#') 
+      + '\nTrades: '   + tostring(totaltrades,           '#')
+      + '\nWin/Loss: ' + tostring(totalwins/totallosses, '#.##') 
+      + '\nWinrate: '  + tostring(totalwins/totaltrades, '#.#%')       
+      + '\nBar Time: ' + tostring(barlife,               '#.#%')
+
+if show_info and barstate.islast  
+    lbl := label.new(bar_index, ohlc4, info, xloc.bar_index, yloc.price, 
+                     color.new(color.blue, 100), label.style_label_left, color.black, size.small, text.align_left)
+    label.delete(lbl[1])

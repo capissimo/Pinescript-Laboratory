@@ -41,9 +41,9 @@ study('Machine Learning: kNN-based Strategy (aroon)', '', true, precision=4, max
 
 //-------------------- Inputs
 
-K           = input(15,    'K Value for kNN Model |2..n|', minval=2)
-shortlag    = input(2,     'Short Aroon Lag |1..n|',       minval=1)
-longlag     = input(1,     'Long Aroon Lag |1..n|',        minval=1)
+K           = input(63,    'K Value for kNN Model |2..n|', minval=2)
+shortlag    = input(5,     'Short Aroon Lag |1..n|',       minval=1)
+longlag     = input(10,    'Long Aroon Lag |1..n|',        minval=1)
 HighLevel   = input(90,    'Overbought Level |1..n|',      minval=1)
 LowLevel    = input(10,    'Oversold Level |1..n|',        minval=1)
 ftype       = input('Both','Filter Signals by',            options=['Volatility','Volume','Both','None'])
@@ -82,15 +82,17 @@ aroon(lag) =>
     bulls = 100 * (highestbars(high, lag+1) + lag) / lag
     bears = 100 * (lowestbars(low, lag+1)   + lag) / lag
     (bulls>HighLevel and bears<LowLevel) ? 1 : (bulls<LowLevel and bears>HighLevel) ? -1 : 0
-    
+
+scale(x, p) => (x - lowest(x, p)) / (highest(x, p) - lowest(x, p)) //-- scale to the range of [0..1]
+
 //-------------------- Logic
 
 // periodStart = timestamp(startYear, startMonth, startDay, 0, 0)
 // periodStop  = timestamp(stopYear,  stopMonth,  stopDay,  0, 0)
 
 // Predictor indicators, long and short each
-f1 = aroon(longlag)
-f2 = aroon(shortlag)
+f1 = scale(aroon(longlag), K) * 100
+f2 = scale(aroon(shortlag), K) * 100
 
 // Classification data, what happens on the next bar
 class = close[1]<close[0] ? SELL: close[1]>close[0] ? BUY : HOLD
@@ -175,8 +177,8 @@ endShortTrade   = (changed and signal==BUY)  or (signal==SELL and hp_counter==ho
 
 //-------------------- Rendering
 
-plotshape(startLongTrade  ? low  : na, 'Buy',  shape.labelup,   location.belowbar, cAqua(prediction*5),  size=size.small)  // color intensity correction
-plotshape(startShortTrade ? high : na, 'Sell', shape.labeldown, location.abovebar, cPink(-prediction*5), size=size.small)
+plotshape(startLongTrade  ? low  : na, 'Buy',  shape.labelup,   location.belowbar, cAqua(prediction*2),  text='a', textcolor=color.white, size=size.tiny)  // color intensity correction
+plotshape(startShortTrade ? high : na, 'Sell', shape.labeldown, location.abovebar, cPink(-prediction*2), text='a', textcolor=color.white, size=size.tiny)
 plot(endLongTrade         ? high : na, 'StopBuy',  cAqua(6), 2, plot.style_cross)
 plot(endShortTrade        ? low  : na, 'StopSell', cPink(6), 2, plot.style_cross)
 

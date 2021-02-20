@@ -52,13 +52,16 @@ study('Machine Learning: Logistic Regression (v.3)', '', true)
 
 //-------------------- Inputs
 
-ptype      = input('Close','Price Type', options=['Open','High','Low','Close','HL2','OC2','OHL3','HLC3','OHLC4'])
-reso       = input('',     'Resolution', input.resolution)
+ptype      = input('Close','Price Type',                            options=['Open','High','Low','Close','HL2','OC2','OHL3','HLC3','OHLC4'])
+reso       = input('',     'Resolution',                            input.resolution)
 lookback   = input(3,      'Lookback Window Size |2..n| (2)',       minval=2)
 nlbk       = input(2,      'Normalization Lookback |2..240| (120)', minval=2,      maxval=240)
 lrate      = input(0.0009, 'Learning Rate |0.0001..0.01|',          minval=0.0001, maxval=0.01, step=0.0001)
-iterations = input(1000,   'Training Iterations |50..20000|',       minval=50)
-ftype      = input('Volatility', 'Filter Signals by',                     options=['Volatility','Volume','Both','None'])
+iterations = input(1000,   'Training Iterations |50..n|',           minval=50)
+ftype      = input('Volatility', 'Filter Signals by',               options=['Volatility','Volume','Both','None'])
+minatr     = input(1,      'MIN ATR Lag for the Filter |1..n|',     minval=1)
+maxatr     = input(10,     'Max ATR Lag for the Filter |1..n|',     minval=1)
+vol        = input(55,     'Volume Lag for the Filter |1..n|',      minval=1)
 curves     = input(false,  'Show Loss & Prediction Curves?')
 easteregg  = input(true,   'Optional Calculation?')  
 useprice   = input(true,   'Use Price Data for Signal Generation?')
@@ -109,7 +112,7 @@ ds       =  ptype=='Open'  ? open
           : ptype=='HLC3'  ? (high+low+close)/3 
           :                  (open+high+low+close)/4
 		  
-base_ds  = security('', reso, ds)   // ds[barstate.ishistory ? 0 : 1]
+base_ds  = security('', reso, ds) 
 synth_ds = log(abs(pow(base_ds, 2) - 1) + .5)  //-- generate a synthetic dataset
 
 base  = easteregg ? time    : base_ds          //-- standard and optional calculation
@@ -119,9 +122,9 @@ synth = easteregg ? base_ds : synth_ds
 scaled_loss        = minimax(loss,       nlbk, lowest(base_ds, nlbk), highest(base_ds, nlbk))
 scaled_prediction  = minimax(prediction, nlbk, lowest(base_ds, nlbk), highest(base_ds, nlbk))
 
-filter =   ftype=='Volatility' ? volatilityBreak(1, 10) 
-         : ftype=='Volume'     ? volumeBreak(49) 
-         : ftype=='Both'       ? volatilityBreak(1, 10) and volumeBreak(49)
+filter =   ftype=='Volatility' ? volatilityBreak(minatr, maxatr) 
+         : ftype=='Volume'     ? volumeBreak(vol) 
+         : ftype=='Both'       ? volatilityBreak(minatr, maxatr) and volumeBreak(vol)
          :                       true
 
 signal :=  useprice ? 
@@ -142,65 +145,72 @@ endShortTrade   = (signal==SELL and hp_counter==holding_p and not changed) or (c
 plot(curves ? scaled_loss : na,       '', color.blue, 3)
 plot(curves ? scaled_prediction : na, '', color.lime, 3)
 
-plotshape(startLongTrade  ? low  : na, 'Buy',  shape.labelup,   location.belowbar, color.teal,   30, size=size.tiny)
-plotshape(startShortTrade ? high : na, 'Sell', shape.labeldown, location.abovebar, color.maroon, 30, size=size.tiny)
-// plot(endLongTrade         ? high : na, 'StopBuy',  color.teal,   2, plot.style_cross)
-// plot(endShortTrade        ? low  : na, 'StopSell', color.maroon, 2, plot.style_cross)
+plotshape(startLongTrade  ? low  : na, 'Buy',  shape.labelup,   location.belowbar, color.teal,   text='l', textcolor=color.white, size=size.tiny)  
+plotshape(startShortTrade ? high : na, 'Sell', shape.labeldown, location.abovebar, color.maroon, text='l', textcolor=color.white, size=size.tiny)
+plot(endLongTrade         ? high : na, 'StopBuy',  color.teal,   2, plot.style_cross)
+plot(endShortTrade        ? low  : na, 'StopSell', color.maroon, 2, plot.style_cross)
 
-//-------------------- Alerting
+//-------------------- Notification
 
-alertcondition(startLongTrade,  'Buy',  'Go long!')
-alertcondition(startShortTrade, 'Sell', 'Go short!') 
-alertcondition(startLongTrade or startShortTrade, 'Alert', 'Deal Time!') //-- general alert
+if changed and signal==BUY 
+    alert("Buy Alert", alert.freq_once_per_bar)  // alert.freq_once_per_bar_close
+if changed and signal==SELL 
+    alert("Sell Alert", alert.freq_once_per_bar)
+    
+alertcondition(startLongTrade,  "Buy Alert",  "Go Long!")
+alertcondition(startShortTrade, "Sell Alert", "Go Short!")
 
-//-------------------- Backtesting (TODO)
+//-------------------- Backtesting
 
-show_info = input(false, 'Show Information?')
-lot_size  = input(0.01,  'Lot Size', options=[0.01,0.1,0.2,0.3,0.5,1,2,3,5,10,20,30,50,100,1000]) 
+show_info = input(true, '===Information===')
+lot_size  = input(0.01, 'Lot Size', options=[0.01,0.1,0.2,0.3,0.5,1,2,3,5,10,20,30,50,100,1000]) 
+useopen   = input(true, 'Use OHL3=false, Open=true in calculation')
 
-ohl3 = (open+high+low)/3
+tbase   = (time - time[1]) / 1000
+tcurr   = (timenow - time_close[1]) / 1000
+barlife = tcurr / tbase
 
-var float start_long_trade  = 0.  
+bidask  = useopen ? open :(open+high+low)/3
+
+var float start_long_trade  = bidask  
 var float long_trades       = 0.
-var float start_short_trade = 0.  
+var float start_short_trade = bidask  
 var float short_trades      = 0.
 var int   wins              = 0
 var int   trade_count       = 0
 
 if startLongTrade 
-    start_long_trade := ohl3 
+    start_long_trade := bidask 
 if endLongTrade
-    trade_count  := 1
-    ldiff = (ohl3 - start_long_trade)
+    ldiff         = (bidask - start_long_trade)
     wins         := ldiff > 0 ? 1 : 0
     long_trades  := ldiff * lot_size   
-if startShortTrade 
-    start_short_trade := ohl3
-if endShortTrade
     trade_count  := 1
-    sdiff = (start_short_trade - ohl3)
+if startShortTrade 
+    start_short_trade := bidask
+if endShortTrade
+    sdiff         = (start_short_trade - bidask)
     wins         := sdiff > 0 ? 1 : 0
     short_trades := sdiff * lot_size 
+    trade_count  := 1
     
 cumreturn   = cum(long_trades) + cum(short_trades)  //-- cumulative return 
 totaltrades = cum(trade_count)
 totalwins   = cum(wins)  
 totallosses = totaltrades - totalwins == 0 ? 1 : totaltrades - totalwins
 
-//-------------------- Information
+//------------------- Information
 
 var label lbl = na
 
-tbase = (time - time[1]) / 1000
-tcurr = (timenow - time_close[1]) / 1000
-
-info =  'CR='          + tostring(cumreturn,             '#.#') 
+info =  'HPeriod: '    + tostring(holding_p,             '#') 
+      + '\nCR='        + tostring(cumreturn,             '#.#') 
       + '\nTrades: '   + tostring(totaltrades,           '#')
       + '\nWin/Loss: ' + tostring(totalwins/totallosses, '#.##') 
-      + '\nWinrate: '  + tostring(totalwins/totaltrades, '#.#%') 
-      + '\nBar Time: ' + tostring(tcurr / tbase,         '#.#%')
+      + '\nWinrate: '  + tostring(totalwins/totaltrades, '#.#%')       
+      + '\nBar Time: ' + tostring(barlife,               '#.#%')
 
 if show_info and barstate.islast  
-    lbl := label.new(bar_index, close, info, xloc.bar_index, yloc.price, 
+    lbl := label.new(bar_index, ohlc4, info, xloc.bar_index, yloc.price, 
                      color.new(color.blue, 100), label.style_label_left, color.black, size.small, text.align_left)
     label.delete(lbl[1])

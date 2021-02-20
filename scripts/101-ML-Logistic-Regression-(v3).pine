@@ -59,7 +59,7 @@ nlbk       = input(2,      'Normalization Lookback |2..240| (120)', minval=2,   
 lrate      = input(0.0009, 'Learning Rate |0.0001..0.01|',          minval=0.0001, maxval=0.01, step=0.0001)
 iterations = input(1000,   'Training Iterations |50..n|',           minval=50)
 ftype      = input('Volatility', 'Filter Signals by',               options=['Volatility','Volume','Both','None'])
-minatr     = input(1,      'MIN ATR Lag for the Filter |1..n|',     minval=1)
+minatr     = input(1,      'Min ATR Lag for the Filter |1..n|',     minval=1)
 maxatr     = input(10,     'Max ATR Lag for the Filter |1..n|',     minval=1)
 vol        = input(55,     'Volume Lag for the Filter |1..n|',      minval=1)
 curves     = input(false,  'Show Loss & Prediction Curves?')

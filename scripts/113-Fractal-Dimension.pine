@@ -1,0 +1,39 @@
+// This source code is subject to the terms of the Mozilla Public License 2.0 at https://mozilla.org/MPL/2.0/
+// © capissimo
+
+//@version=4
+study('Fractal Dimension', '', false)
+
+// John F Ehlers' Fractal Dimension
+
+// Description:
+
+// Fractal Dimension is a measure of how complicated a self similar 
+// shape is. For instance, a line is smaller and more basic than a square.
+
+// The lower the Fractal Dimension the closer a stock chart is to 
+// a straight line and therefore the stronger the trend.  
+// High readings on the other hand reveal a complex fractal; 
+// the shape of a range bound market. 
+
+// These two different market types require very different 
+// strategies in order to maximize profits and minimize losses.
+
+//-------------------- Inputs
+
+n = input(20, 'Lag', minval=2)
+
+//-------------------- Logic
+
+half = n/2
+HL1  = (highest(high[half], half) - lowest(low[half], half)) / half
+HL2  = (highest(high,       half) - lowest(low,       half)) / half
+HL   = (highest(high,       n)    - lowest(low,       n))    / n
+D    = (log(HL1 + HL2) - log(HL)) / log(2)
+
+dim  = D < 1 ? 1 : D > 2 ? 2 : D
+
+//-------------------- Rendering
+
+hline(1.5)
+plot(dim, '', color.blue)

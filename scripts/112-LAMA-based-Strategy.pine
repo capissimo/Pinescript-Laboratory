@@ -112,6 +112,7 @@ alertcondition(startShortTrade, "Sell Alert", "Go Short!")
 
 //-------------------- Backtesting
 
+show_info = input(true, '===Backtesting Results===')
 lot_size  = input(0.01,  'Lot Size', options=[0.01,0.1,0.2,0.3,0.5,1,2,3,5,10,20,30,50,100,1000]) 
 useopen   = input(true,  'Open Price=true, OHL3=false')
 
@@ -158,7 +159,7 @@ info =  'CR='          + tostring(cumreturn,             '#.#')
       + '\nWinrate: '  + tostring(totalwins/totaltrades, '#.#%')       
       + '\nBar Time: ' + tostring(barlife,               '#.#%')
 
-if input(true, '===Information===') and barstate.islast  
+if show_info and barstate.islast  
     lbl := label.new(bar_index, ohlc4, info, xloc.bar_index, yloc.price, 
                      color.new(color.blue, 100), label.style_label_left, color.black, size.small, text.align_left)
     label.delete(lbl[1])

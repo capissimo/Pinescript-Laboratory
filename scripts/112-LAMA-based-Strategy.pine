@@ -100,7 +100,7 @@ plotshape(startShortTrade ? high : na, 'Sell', shape.labeldown, location.aboveba
 plot(endLongTrade         ? high : na, 'StopBuy',  color.blue, 2, plot.style_cross)
 plot(endShortTrade        ? low  : na, 'StopSell', color.red,  2, plot.style_cross)
 
-//-------------------- Alerting
+//-------------------- Notification
 
 if changed and signal==BUY 
     alert("Buy Alert", alert.freq_once_per_bar)  // alert.freq_once_per_bar_close

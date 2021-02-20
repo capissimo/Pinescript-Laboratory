@@ -43,10 +43,9 @@ var HOLD =  0
 
 //--------------------  Dynamic Arrays
 
-var int signal = HOLD
-var float maf  = 0.0
-var float mas  = 0.0
-
+var int   signal     = HOLD
+var float maf        = 0.0
+var float mas        = 0.0
 var int   hp_counter = 0
 
 //-------------------- Custom Functions
@@ -70,14 +69,12 @@ lama(ds, prim, sec) =>
 
 //-------------------- Logic
 
-x = ds //ds[barstate.ishistory ? 0 : 1]
-
 filter =   ftype=='Volatility' ? volatilityBreak(1, 10) 
          : ftype=='Volume'     ? volumeBreak(49) 
          : ftype=='Both'       ? volatilityBreak(1, 10) and volumeBreak(49)
          :                       true
 
-lama1 = lama(x, prim, sec)
+lama1 = lama(ds, prim, sec)
 lama2 = lama(lama1, prim, prim+2)
     
 // Generate signal
@@ -117,12 +114,13 @@ alertcondition(startShortTrade, "Sell Alert", "Go Short!")
 
 show_info = input(true, '===Information===')
 lot_size  = input(0.01,  'Lot Size', options=[0.01,0.1,0.2,0.3,0.5,1,2,3,5,10,20,30,50,100,1000]) 
+useopen   = input(true,  'Open Price=true, OHL3=false')
 
 tbase   = (time - time[1]) / 1000
 tcurr   = (timenow - time_close[1]) / 1000
 barlife = tcurr / tbase
 
-bidask  = (open+high+low)/3
+bidask  = useopen ? open : (open+high+low)/3
 
 var float start_long_trade  = bidask  
 var float long_trades       = 0.
@@ -165,4 +163,3 @@ if show_info and barstate.islast
     lbl := label.new(bar_index, ohlc4, info, xloc.bar_index, yloc.price, 
                      color.new(color.blue, 100), label.style_label_left, color.black, size.small, text.align_left)
     label.delete(lbl[1])
-    

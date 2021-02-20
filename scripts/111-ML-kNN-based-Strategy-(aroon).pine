@@ -42,8 +42,8 @@ study('Machine Learning: kNN-based Strategy (aroon)', '', true, precision=4, max
 //-------------------- Inputs
 
 K           = input(15,    'K Value for kNN Model |2..n|', minval=2)
-shortlag    = input(1,     'Short Aroon Lag |1..n|',       minval=1)
-longlag     = input(2,     'Long Aroon Lag |1..n|',        minval=1)
+shortlag    = input(2,     'Short Aroon Lag |1..n|',       minval=1)
+longlag     = input(1,     'Long Aroon Lag |1..n|',        minval=1)
 HighLevel   = input(90,    'Overbought Level |1..n|',      minval=1)
 LowLevel    = input(10,    'Oversold Level |1..n|',        minval=1)
 ftype       = input('Both','Filter Signals by',            options=['Volatility','Volume','Both','None'])

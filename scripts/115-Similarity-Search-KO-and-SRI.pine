@@ -1,0 +1,141 @@
+// This source code is subject to the terms of the Mozilla Public License 2.0 at https://mozilla.org/MPL/2.0/
+// © capissimo
+
+//@version=4
+study('Similarity Search, Karobein and Seasonal Random Index', '', false, precision=2)
+
+// Similarity Search, Karobein oscillator (KO) and Seasonal Random Index (SRI)
+
+// Description:
+
+// This indicator uses dynamic capabilities of Pinescript version 4 coupled with
+// Seasonal Random Index (SRI) and Karobein Oscillator (KO).
+// SRI (green/red areas) is employed to detect trends and KO (black curce) is used to find historical similarities
+// to predict the next bar's direction.
+// The midline arrows are the predictions produced by the similarity search algorithm.
+
+//-------------------- Inputs
+
+ds     = input(close, 'Dataset')
+minlag = input(5,     'Minimun Lag (Season) |0..n|', minval=0)
+maxlag = input(60,    'Maximun Lag |1..n|',          minval=1)
+pct    = input(0.,    'Adaptation (%)',              minval=0, maxval=100) / 100.0	
+
+//-------------------- Custom Functions
+
+scale(x, p) => (x - lowest(x, p)) / (highest(x, p) - lowest(x, p))  // scale to the range of [0..1]
+
+//-------------------- Logic
+
+// dynamics
+dlen  = avg(minlag, maxlag)   //-- dynamic len
+dlen := atr(10) > atr(40) ? max(minlag, dlen * (1 - pct)) : min(maxlag, dlen * (1 + pct))
+d     = int(dlen[0])
+
+sri = ds * (ds / ( (ds + ds[minlag]) / 2 ))  //-- seasonal random index
+
+seasoned   = scale(sri, d)
+deseasoned = scale(ds - sri, d)
+avs        = avg(seasoned, deseasoned)
+cond       = cross(seasoned, deseasoned)
+
+//-------------------- Visualization
+
+hline(0.5, linestyle=hline.style_dotted)
+hline(0.9, linestyle=hline.style_dotted)
+hline(0.1, linestyle=hline.style_dotted)
+plot(avs, '', color.silver)
+fill(plot(seasoned, transp=100), plot(deseasoned, linewidth=2, transp=100), seasoned > deseasoned ? color.green : color.red, 50)
+plot(cond ? avs : na, '', color.new(color.black,0), 2, plot.style_circles, transp=0)
+
+//==================== Similarity Search based on Karobein Oscillator
+
+//-------------------- Inputs
+
+kosc      = input(true, '===Karobein Dynamic===')
+minlen    = input(1,    'Karobein Minimum Lag |1..n|',  minval=1)
+maxlen    = input(42,   'Karobein Maximum Lag |1..n|',  minval=1)
+pct2      = input(10.,  'Adaptation (%)',               minval=0, maxval=100) / 100.0
+algo      = input('Multiple-Check', 'Search algorithm', options=['Single-Check','Multiple-Check'])
+depth     = input(740,  'Search Lookback |5..n|',       minval=5)
+tolerance = input(0.05, 'Search Tolerance |0.0..1.0|',  minval=0.0) 
+lag       = input(20,   'Prediction Line Lag |5..n|',   minval=5)
+
+//-------------------- System Variables
+
+var string buy  = "🡅"
+var string sell = "🡇"
+var string hold = "⤫"
+
+//-------------------- Custom Functions
+
+minimax(X, p, min, max) =>  // scale to the range of [min, max]
+    hi = highest(X, p), lo = lowest(X, p)
+    (max - min) * (X - lo)/(hi - lo) + min
+    
+emax(data, lkb) =>
+    alpha = 2 / (lkb + 1)
+    sum = 0.0
+    ma = sma(data, lkb)
+    sum := na(sum[1]) ? ma : alpha * data + (1 - alpha) * nz(sum[1])
+
+karobein(data, lkb) =>
+    ma = emax(data, lkb) 
+    a  = emax(ma < ma[1] ? ma/ma[1] : 0, lkb)
+    b  = emax(ma > ma[1] ? ma/ma[1] : 0, lkb)
+    c  = (ma/ma[1])/(ma/ma[1] + b)
+    2*((ma/ma[1])/(ma/ma[1] + c*a)) - 1
+
+isclose(x, y, tolerance) =>  abs(x - y) <= tolerance 
+ 
+find_similar1(base, start, lkb, tol) =>
+    found = false, index = -1, res = 0
+    for i=start+lkb to start+1
+        if isclose(base[i+2],base[start+2], tol) and 
+           isclose(base[i+1],base[start+1], tol) and 
+           isclose(base[i],base[start], tol)
+            found := true
+            index := i
+            res := falling(base[i],2) ? -1 : rising(base[i],2) ? 1 : 0
+            break
+    res 
+    
+find_similarM(base, start, lkb, tol) =>
+    var results = array.new_float(20) 
+    for i=start+lkb to start
+        v0 = isclose(base[i  ],base[start  ], tol)
+        v1 = isclose(base[i+1],base[start+1], tol)
+        v2 = isclose(base[i+2],base[start+2], tol)
+        v3 = isclose(base[i+3],base[start+3], tol)
+        if v0 and v1 and v2 and v3
+            array.shift(results)
+            array.push(results, falling(base[i+4],2) ? -1 : rising(base[i+4],2) ? 1 : 0) //-- look ahead
+    array.sum(results)
+    
+//-------------------- Logic
+
+// dynamics
+dlen2  = avg(minlen, maxlen)   
+dlen2 := atr(1) > atr(10) ? max(minlen, dlen2 * (1 - pct2)) : min(maxlen, dlen2 * (1 + pct2)) 
+dl     = int(dlen2[0])
+
+karo   = minimax(karobein(ds, dl), 1440, 0, 1)
+res    = algo=='Single-Check' ? find_similar1(karo, 0, depth, tolerance) : find_similarM(karo, 0, depth, tolerance)
+sres   = res>=1 ? buy : res<=-1 ? sell : hold
+c      = karo[0] > karo[lag] ? color.green : karo[0] < karo[lag] ? color.red : color.gray
+
+//-------------------- Visualization
+
+plot(kosc ? karo : na, '', color.new(color.black,0), 2)
+
+label l1 = na 
+if res != 0
+    l1 := label.new(time, .5, sres, xloc.bar_time, color=res>=1?color.green:color.red, 
+                     style=label.style_label_left, textcolor=color.white, size=size.tiny)
+label.delete(l1[1])
+plotshape(res>= 1 ? .5 : na, '', shape.triangleup,   location.absolute, color.green, 0, text=buy,  textcolor=color.white, size=size.tiny)
+plotshape(res<=-1 ? .5 : na, '', shape.triangledown, location.absolute, color.red,   0, text=sell, textcolor=color.white, size=size.tiny)
+
+var line rl = na
+line.delete(rl[1])
+rl := line.new(bar_index-lag, karo[lag], bar_index, karo[0], xloc.bar_index, extend.none, c, line.style_solid, 3)

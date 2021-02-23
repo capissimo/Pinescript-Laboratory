@@ -14,6 +14,12 @@ study('Similarity Search, Karobein and Seasonal Random Index', '', false, precis
 // to predict the next bar's direction.
 // The midline arrows are the predictions produced by the similarity search algorithm.
 
+// A note on the Similarity Search Algorithm
+
+// The Similarity Search Algorithm is based on the assumption that a centralized oscillator bound to a 
+// predefined range of values has got a predictive power. The above algorithm is looking for 
+// historical similarity given a stretch of the most recent bars.
+
 //-------------------- Inputs
 
 ds     = input(close, 'Dataset')

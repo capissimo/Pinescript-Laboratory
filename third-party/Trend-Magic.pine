@@ -1,0 +1,150 @@
+// This source code is subject to the terms of the Mozilla Public License 2.0 at https://mozilla.org/MPL/2.0/
+// © capissimo
+
+//@version=4
+study("Trend Magic", "TM", true, format=format.price, precision=2)
+
+// This is my modification of the Trend Magic script © KivancOzbilgic
+// featuring signal generator and performance measurement modules
+
+//-------------------- inputs
+
+ptype      = input('Close','Dataset',                           options=['Open','High','Low','Close','HL2','OC2','OHL3','HLC3','OHLC4'])
+period     = input(20,     "CCI period",                        minval=1)
+coeff      = input(1,      "ATR Multiplier",                    minval=1)  
+AP         = input(5,      "ATR Period",                        minval=1)
+
+ftype      = input('Volatility', 'Filter Signals by',           options=['Volatility','Volume','Both','None'])
+minatr     = input(1,      'Min ATR Lag for the Filter |1..n|', minval=1)
+maxatr     = input(10,     'Max ATR Lag for the Filter |1..n|', minval=1)
+vol        = input(55,     'Volume Lag for the Filter |1..n|',  minval=1)
+holding_p  = input(1,      'Holding Period |1..n|',             minval=1)
+
+//-------------------- System Variables
+
+var int BUY        =  1
+var int SELL       = -1
+var int HOLD       =  0
+
+//-------------------- Series
+
+var int signal       = HOLD
+var int hp_counter   = 0
+var float MagicTrend = 0.0
+
+//-------------------- Custom Functions
+
+volumeBreak(thres) =>  
+    rsivol   = rsi(volume, 14)  
+    osc      = hma(rsivol, 10)  
+    osc > thres                     
+
+volatilityBreak(volmin, volmax) => atr(volmin) > atr(volmax)
+
+//-------------------- Logic
+
+ds       =  ptype=='Open'  ? open
+          : ptype=='High'  ? high 
+          : ptype=='Low'   ? low 
+          : ptype=='Close' ? close 
+          : ptype=='HL2'   ? (high+low)/2 
+          : ptype=='OC2'   ? (open+close)/2 
+          : ptype=='OHL3'  ? (open+high+low)/3 
+          : ptype=='HLC3'  ? (high+low+close)/3 
+          :                  (open+high+low+close)/4
+
+ATR         = sma(tr, AP)
+upT         = low-ATR*coeff
+downT       = high+ATR*coeff
+MagicTrend := cci(ds, period)>=0 ? (upT<nz(MagicTrend[1]) ? nz(MagicTrend[1]) : upT) : (downT>nz(MagicTrend[1]) ? nz(MagicTrend[1]) : downT)
+color1      = cci(ds, period)>=0 ? #0022FC : #FC0400
+
+filter =   ftype=='Volatility' ? volatilityBreak(minatr, maxatr) 
+         : ftype=='Volume'     ? volumeBreak(vol) 
+         : ftype=='Both'       ? volatilityBreak(minatr, maxatr) and volumeBreak(vol)
+         :                       true
+
+signal := color1[1]==#0022FC and color1==#FC0400 and filter ? SELL : color1[1]==#FC0400 and color1==#0022FC and filter ? BUY : nz(signal[1]) 
+
+changed = change(signal)
+    
+hp_counter := changed ? 0 : hp_counter + 1
+
+startLongTrade  = changed and signal==BUY    
+startShortTrade = changed and signal==SELL   
+endLongTrade    = (signal==BUY  and hp_counter==holding_p and not changed) or (changed and signal==SELL)
+endShortTrade   = (signal==SELL and hp_counter==holding_p and not changed) or (changed and signal==BUY)
+
+//-------------------- Rendering
+
+plot(MagicTrend, color=color1, linewidth=3)
+
+plotshape(startLongTrade  ? low  : na, 'Buy',  shape.labelup,   location.belowbar, color.teal,   text='l', textcolor=color.white, size=size.tiny)  
+plotshape(startShortTrade ? high : na, 'Sell', shape.labeldown, location.abovebar, color.maroon, text='l', textcolor=color.white, size=size.tiny)
+plot(endLongTrade         ? high : na, 'StopBuy',  color.teal,   2, plot.style_cross)
+plot(endShortTrade        ? low  : na, 'StopSell', color.maroon, 2, plot.style_cross)
+
+//-------------------- Notification
+
+if changed and signal==BUY 
+    alert("Buy Alert", alert.freq_once_per_bar)  // alert.freq_once_per_bar_close
+if changed and signal==SELL 
+    alert("Sell Alert", alert.freq_once_per_bar)
+    
+alertcondition(startLongTrade,  "Buy Alert",  "Go Long!")
+alertcondition(startShortTrade, "Sell Alert", "Go Short!")
+
+//-------------------- Backtesting
+
+show_info = input(true, '===Information===')
+lot_size  = input(0.01, 'Lot Size', options=[0.01,0.1,0.2,0.3,0.5,1,2,3,5,10,20,30,50,100,1000]) 
+useopen   = input(true, 'Use OHL3=false, Open=true in calculation')
+
+tbase   = (time - time[1]) / 1000
+tcurr   = (timenow - time_close[1]) / 1000
+barlife = tcurr / tbase
+
+bidask  = useopen ? open :(open+high+low)/3
+
+var float start_long_trade  = bidask  
+var float long_trades       = 0.
+var float start_short_trade = bidask  
+var float short_trades      = 0.
+var int   wins              = 0
+var int   trade_count       = 0
+
+if startLongTrade 
+    start_long_trade := bidask 
+if endLongTrade
+    ldiff         = (bidask - start_long_trade)
+    wins         := ldiff > 0 ? 1 : 0
+    long_trades  := ldiff * lot_size   
+    trade_count  := 1
+if startShortTrade 
+    start_short_trade := bidask
+if endShortTrade
+    sdiff         = (start_short_trade - bidask)
+    wins         := sdiff > 0 ? 1 : 0
+    short_trades := sdiff * lot_size 
+    trade_count  := 1
+    
+cumreturn   = cum(long_trades) + cum(short_trades)  //-- cumulative return 
+totaltrades = cum(trade_count)
+totalwins   = cum(wins)  
+totallosses = totaltrades - totalwins == 0 ? 1 : totaltrades - totalwins
+
+//------------------- Information
+
+var label lbl = na
+
+info =  'HPeriod: '    + tostring(holding_p,             '#') 
+      + '\nCR='        + tostring(cumreturn,             '#.#') 
+      + '\nTrades: '   + tostring(totaltrades,           '#')
+      + '\nWin/Loss: ' + tostring(totalwins/totallosses, '#.##') 
+      + '\nWinrate: '  + tostring(totalwins/totaltrades, '#.#%')       
+      + '\nBar Time: ' + tostring(barlife,               '#.#%')
+
+if show_info and barstate.islast  
+    lbl := label.new(bar_index, ohlc4, info, xloc.bar_index, yloc.price, 
+                     color.new(color.blue, 100), label.style_label_left, color.black, size.small, text.align_left)
+    label.delete(lbl[1])

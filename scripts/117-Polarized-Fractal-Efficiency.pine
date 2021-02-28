@@ -8,18 +8,22 @@ study('Polarized Fractal Efficiency', '', false)
 
 // Description:
 
-// Polarized Fractal Efficiency (PFE) is a technical indicator 
-// that was developed by Hans Hannula to determine price efficiency 
-// over a user-defined period. This indicator fluctuates between 
+// Technically, Polarized Fractal Efficiency (PFE) is a measure of market 
+// choppiness. It is an indicator derived from fractal geometry, the 
+// mathematics that describes chaotic systems.
+
+// This technical indicator was developed by Hans Hannula to determine price 
+// efficiency over a user-defined period. This indicator fluctuates between 
 // -100 and +100, with 0 as the centerline. Securities with a PFE 
 // greater than zero are deemed to be trending up, while a reading of 
 // less than zero indicates the trend is down. Polarized Fractal 
 // Efficiency's signature characteristic is its use of fractal geometry 
 // in determining how efficiently a security's price is moving.
 
-// Generates a long entry signal when the Polarized Fractional Efficiency
-// (PFE) value crosses over a signal line, and/or generates a short entry 
-// signal when the PFE value crosses under a signal line.
+// This script uses a customized version of PFE formula and generates a long  
+// entry signal when the Polarized Fractional Efficiency (PFE) value crosses  
+// over a signal line, and/or generates a short entry signal when the PFE  
+// value crosses under a signal line.
 
 // The Polarized Fractional Efficiency indicator can be used to determine
 // price efficiency over a user-defined time period. Assets with a PFE  
@@ -57,7 +61,7 @@ var int  signal = HOLD
 
 //-------------------- Custom Functions
 
-pfe(ds, lag, smooth) =>  //-- Polarized Fractal Efficiency
+pfe(ds, lag, smooth) =>  //-- Polarized Fractal Efficiency (custom version!)
     x   = sqrt(pow(ds - ds[lag], 2) + pow(lag, 2))
     y   = sum(sqrt(pow(ds - ds[lag], 2) + 1), lag-2)
     pct = 100 * x / y
@@ -95,16 +99,16 @@ filter =   ftype=='Volatility' ? volatilityBreak(1, 10)
 pfevalue = pfe(base, lag, m)
 
 if method=='Center'
-	long  := crossover(pfevalue,  HOLD) //and entmethod!=ShortEntry
-	short := crossunder(pfevalue, HOLD) //And ( EntryMethod <> LongEntry );
+	long  := crossover(pfevalue,  HOLD) 
+	short := crossunder(pfevalue, HOLD) 
 else
     if method=='InsideOut'
-	    long  := crossover(pfevalue,   bound) //and EntryMethod <> LongEntry
-	    short := crossunder(pfevalue, -bound) //and EntryMethod <> ShortEntry
+	    long  := crossover(pfevalue,   bound) 
+	    short := crossunder(pfevalue, -bound) 
     else 
         if method=='OutsideIn'
-	        long  := crossunder(pfevalue, bound) //and EntryMethod <> LongEntry
-	        short := crossover(pfevalue, -bound) //and EntryMethod <> ShortEntry
+	        long  := crossunder(pfevalue, bound) 
+	        short := crossover(pfevalue, -bound) 
 
 signal := long and filter ? BUY : short and filter ? SELL : nz(signal[1])
 

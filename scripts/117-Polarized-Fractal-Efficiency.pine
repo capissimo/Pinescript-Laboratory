@@ -1,0 +1,186 @@
+// This source code is subject to the terms of the Mozilla Public License 2.0 at https://mozilla.org/MPL/2.0/
+// © capissimo
+
+//@version=4
+study('Polarized Fractal Efficiency', '', false)
+
+// Polarized Fractal Efficiency
+
+// Description:
+
+// Polarized Fractal Efficiency (PFE) is a technical indicator 
+// that was developed by Hans Hannula to determine price efficiency 
+// over a user-defined period. This indicator fluctuates between 
+// -100 and +100, with 0 as the centerline. Securities with a PFE 
+// greater than zero are deemed to be trending up, while a reading of 
+// less than zero indicates the trend is down. Polarized Fractal 
+// Efficiency's signature characteristic is its use of fractal geometry 
+// in determining how efficiently a security's price is moving.
+
+// Generates a long entry signal when the Polarized Fractional Efficiency
+// (PFE) value crosses over a signal line, and/or generates a short entry 
+// signal when the PFE value crosses under a signal line.
+
+// The Polarized Fractional Efficiency indicator can be used to determine
+// price efficiency over a user-defined time period. Assets with a PFE  
+// greater than zero are deemed to be trending up, while a reading of less 
+// than zero indicates the trend is down. The strengh of the trend is  
+// measured by the position of the PFE relative to the zero line. 
+
+// As a general rule, the further the PFE value is away from zero, 
+// the stronger and more efficient the given trend is. A PFE value that 
+// fluctuates around the zero line could indicate that the supply and 
+// demand for the security are in balance and price may trade sideways.
+
+// Optional setup: try out InsideOut with 5 lag
+
+//-------------------- Inputs
+
+ptype  = input('Close',  'Price Type',              options=['Open','High','Low','Close','HL2','OC2','OHL3','HLC3','OHLC4'])
+lag    = input(10,       'Indicator Lag |3..n|',    minval=3)
+m      = input(5,        'Smoothing Period |1..n|', minval=1)
+method = input('Center', 'Signal Method',           options=['Center','InsideOut'])
+bound  = input(10.0,     'Bounds |0.0..100.0|',     minval=0.0)
+ftype  = input('None',   'Filter Signals by',       options=['Volatility','Volume','Both','None'])
+
+//-------------------- System Variables
+
+var int BUY  =  1
+var int SELL = -1
+var int HOLD =  0
+
+//-------------------- Series
+
+var bool long   = 0.0
+var bool short  = 0.0
+var int  signal = HOLD
+
+//-------------------- Custom Functions
+
+pfe(ds, lag, smooth) =>  //-- Polarized Fractal Efficiency
+    x   = sqrt(pow(ds - ds[lag], 2) + pow(lag, 2))
+    y   = sum(sqrt(pow(ds - ds[lag], 2) + 1), lag-2)
+    pct = 100 * x / y
+    pct_corr = ds < ds[1] ? -pct : pct
+    ema(pct_corr, smooth)
+
+volumeBreak(thres) =>  
+    rsivol   = rsi(volume, 14)  
+    osc      = hma(rsivol, 10)  
+    osc > thres                     
+
+volatilityBreak(volmin, volmax) => atr(volmin) > atr(volmax)
+
+//-------------------- Logic
+
+tbase   = (time - time[1]) / 1000
+tcurr   = (timenow - time_close[1]) / 1000
+barlife = tcurr / tbase
+
+base =  ptype=='Open'  ? open 
+      : ptype=='High'  ? high
+      : ptype=='Low'   ? low
+      : ptype=='Close' ? close
+      : ptype=='OC2'   ? (open+close)/2 
+      : ptype=='HL2'   ? hl2 
+      : ptype=='OHL3'  ? (open+high+low)/3 
+      : ptype=='HLC3'  ? hlc3 
+      :                  ohlc4
+
+filter =   ftype=='Volatility' ? volatilityBreak(1, 10) 
+         : ftype=='Volume'     ? volumeBreak(49) 
+         : ftype=='Both'       ? volatilityBreak(1, 10) and volumeBreak(49)
+         :                       true
+
+pfevalue = pfe(base, lag, m)
+
+if method=='Center'
+	long  := crossover(pfevalue,  HOLD) //and entmethod!=ShortEntry
+	short := crossunder(pfevalue, HOLD) //And ( EntryMethod <> LongEntry );
+else
+    if method=='InsideOut'
+	    long  := crossover(pfevalue,   bound) //and EntryMethod <> LongEntry
+	    short := crossunder(pfevalue, -bound) //and EntryMethod <> ShortEntry
+    else 
+        if method=='OutsideIn'
+	        long  := crossunder(pfevalue, bound) //and EntryMethod <> LongEntry
+	        short := crossover(pfevalue, -bound) //and EntryMethod <> ShortEntry
+
+signal := long and filter ? BUY : short and filter ? SELL : nz(signal[1])
+
+changed = change(signal)
+
+startLongTrade  = changed and signal==BUY
+startShortTrade = changed and signal==SELL
+endLongTrade    = changed and signal==SELL
+endShortTrade   = changed and signal==BUY
+
+//-------------------- Visualization
+
+hline(HOLD)
+hline(bound)
+hline(-bound)
+plot(pfevalue)
+
+plotshape(startLongTrade  ? -bound : na, 'Buy',  shape.labelup,   location.absolute, color.blue, size=size.tiny) 
+plotshape(startShortTrade ?  bound : na, 'Sell', shape.labeldown, location.absolute, color.red,  size=size.tiny) 
+plot(endLongTrade         ? HOLD   : na, 'StopBuy',  color.blue, 1, plot.style_cross)
+plot(endShortTrade        ? HOLD   : na, 'StopSell', color.red,  1, plot.style_cross)
+
+//-------------------- Notification
+
+if changed and signal==BUY 
+    alert('Buy Alert', alert.freq_once_per_bar)  // alert.freq_once_per_bar_close
+if changed and signal==SELL 
+    alert('Sell Alert', alert.freq_once_per_bar)
+    
+alertcondition(startLongTrade,  'Buy Alert',  'Go Long!')
+alertcondition(startShortTrade, 'Sell Alert', 'Go Short!')
+
+//-------------------- Backtest
+
+show_info = input(false, '===Information===')
+lot_size  = input(0.01,  'Lot Size', options=[0.01,0.1,0.2,0.3,0.5,1,2,3,5,10,20,30,50,100,1000]) 
+
+bidask = open //-- (open+high+low)/3 is a more restrained estimate
+
+var float start_long_trade  = bidask  
+var float long_trades       = 0.
+var float start_short_trade = bidask  
+var float short_trades      = 0.
+var int   wins              = 0
+var int   trade_count       = 0
+
+if startLongTrade 
+    start_long_trade := bidask 
+if endLongTrade
+    ldiff         = (bidask - start_long_trade)
+    wins         := ldiff > 0 ? 1 : 0
+    long_trades  := ldiff * lot_size   
+    trade_count  := 1
+if startShortTrade 
+    start_short_trade := bidask
+if endShortTrade
+    sdiff         = (start_short_trade - bidask)
+    wins         := sdiff > 0 ? 1 : 0
+    short_trades := sdiff * lot_size 
+    trade_count  := 1
+    
+cumreturn   = cum(long_trades) + cum(short_trades)  //-- cumulative return 
+totaltrades = cum(trade_count)
+totalwins   = cum(wins)  
+totallosses = totaltrades - totalwins == 0 ? 1 : totaltrades - totalwins
+
+//------------------- Information
+
+var label lbl = na
+
+info =  ptype
+      + '\nCR='        + tostring(cumreturn,             '#.#') 
+      + '\nWinrate: '  + tostring(totalwins/totaltrades, '#.#%')       
+      + '\nBar Time: ' + tostring(barlife,               '#.#%')
+
+if show_info and barstate.islast  
+    lbl := label.new(bar_index, HOLD, info, xloc.bar_index, yloc.price, 
+                     color.new(color.blue, 100), label.style_label_left, color.black, size.small, text.align_left)
+    label.delete(lbl[1])

@@ -1,0 +1,163 @@
+// This source code is subject to the terms of the Mozilla Public License 2.0 at https://mozilla.org/MPL/2.0/
+// © capissimo
+
+//@version=4
+study('Adaptive MA Slope', '', true)
+
+// Adaptive MA Slope
+
+// Description:
+
+// This script generates a long entry signal when the slope of the Adaptive 
+// Moving Average is positive, and/or generates a short entry signal when the 
+// slope of the Adaptive Moving Average is negative.
+
+// The Moving Average Adaptive (Kaufman) belongs to the family of 
+// moving averages, which aid in smoothing or eliminating fluctuations in data. 
+// Moving averages	emphasize the direction of a trend, confirm trend reversals 
+// and smooth out price and volume fluctuations or 'noise' that can confuse 
+// interpretation of the market. The KAMA adjusts to market volatility by 
+// lengthening when the market is moving sideways and trading in a choppy 
+// fashion (making it less responsive) and shortening when the market is 
+// trending (making it more responsive).
+
+//-------------------- Inputs
+
+ptype  = input('OHL3',       'Price Type',             options=['Open','High','Low','Close','HL2','OC2','OHL3','HLC3','OHLC4'])
+lag    = input(20,           'Indicator Lag |2..n|',   minval=2)
+lkb    = input(6,            'Lookback Period |1..n|', minval=1)
+ftype  = input('Both',       'Filter Signals by',      options=['Volatility','Volume','Both','None'])
+
+//-------------------- System Variables
+
+var int BUY  =  1
+var int SELL = -1
+var int HOLD =  0
+
+//-------------------- Series
+
+var bool  long   = 0.0
+var bool  short  = 0.0
+var int   signal = HOLD
+var float result = ohlc4
+
+//-------------------- Custom Functions
+
+kama(ds, p) => // Kaufman adaptive MA
+    fSC = 0.6666666666666667//2 / (input(2,   "KAMA: Fast Alpha", minval=1) + 1)
+    sSC = 0.0645161290322581//2 / (input(30,  "KAMA: Slow Alpha", minval=1) + 1)
+    kamaFinal         = 0.0
+    l                 = na(ds[p]) ? bar_index : p
+    change            = nz(abs(ds - ds[p]), abs(ds - ds[l]))
+    volatility        = nz(sum(abs(ds - ds[1]), p), cum(abs(ds - ds[1])))
+    efficiencyRatio   = change / volatility
+    smoothingConstant = pow((efficiencyRatio * (fSC - sSC) + sSC), 2)
+    kamaFinal        := nz(kamaFinal[1], ds) + nz(smoothingConstant) * nz((ds - kamaFinal[1]))
+
+volumeBreak(thres) =>  
+    rsivol   = rsi(volume, 14)  
+    osc      = hma(rsivol, 10)  
+    osc > thres                     
+
+volatilityBreak(volmin, volmax) => atr(volmin) > atr(volmax)
+
+//-------------------- Logic
+
+tbase   = (time - time[1]) / 1000
+tcurr   = (timenow - time_close[1]) / 1000
+barlife = tcurr / tbase
+
+base =  ptype=='Open'  ? open 
+      : ptype=='High'  ? high
+      : ptype=='Low'   ? low
+      : ptype=='Close' ? close
+      : ptype=='OC2'   ? (open+close)/2 
+      : ptype=='HL2'   ? hl2 
+      : ptype=='OHL3'  ? (open+high+low)/3 
+      : ptype=='HLC3'  ? hlc3 
+      :                  ohlc4
+
+filter =   ftype=='Volatility' ? volatilityBreak(1, 10) 
+         : ftype=='Volume'     ? volumeBreak(49) 
+         : ftype=='Both'       ? volatilityBreak(1, 10) and volumeBreak(49)
+         :                       true
+
+ma = kama(base, lag)
+
+signal := ma > ma[lkb] and filter ? BUY : ma < ma[lkb] and filter ? SELL : nz(signal[1])
+
+result := (ma > ma[lkb] and filter) ? low : (ma < ma[lkb] and filter) ? high : nz(result[1])
+
+changed = change(signal)
+
+startLongTrade  = changed and signal==BUY
+startShortTrade = changed and signal==SELL
+endLongTrade    = changed and signal==SELL
+endShortTrade   = changed and signal==BUY
+
+//-------------------- Visualization
+
+plot(result, '', color.olive, 2, plot.style_linebr)
+
+plotshape(startLongTrade  ? low   : na, 'Buy',  shape.labelup,   location.absolute, color.blue, text='b', size=size.tiny) 
+plotshape(startShortTrade ? high  : na, 'Sell', shape.labeldown, location.absolute, color.red,  text='s', size=size.tiny) 
+plot(endLongTrade         ? ohlc4 : na, 'StopBuy',  color.blue, 2, plot.style_cross)
+plot(endShortTrade        ? ohlc4 : na, 'StopSell', color.red,  2, plot.style_cross)
+
+//-------------------- Notification
+
+if changed and signal==BUY 
+    alert('Buy Alert', alert.freq_once_per_bar)  // alert.freq_once_per_bar_close
+if changed and signal==SELL 
+    alert('Sell Alert', alert.freq_once_per_bar)
+    
+alertcondition(startLongTrade,  'Buy Alert',  'Go Long!')
+alertcondition(startShortTrade, 'Sell Alert', 'Go Short!')
+
+//-------------------- Backtest
+
+show_info = input(false, '===Information===')
+lot_size  = input(0.01,  'Lot Size', options=[0.01,0.1,0.2,0.3,0.5,1,2,3,5,10,20,30,50,100,1000]) 
+
+bidask = open //-- (open+high+low)/3 is a more restrained estimate
+
+var float start_long_trade  = bidask  
+var float long_trades       = 0.
+var float start_short_trade = bidask  
+var float short_trades      = 0.
+var int   wins              = 0
+var int   trade_count       = 0
+
+if startLongTrade 
+    start_long_trade := bidask 
+if endLongTrade
+    ldiff         = (bidask - start_long_trade)
+    wins         := ldiff > 0 ? 1 : 0
+    long_trades  := ldiff * lot_size   
+    trade_count  := 1
+if startShortTrade 
+    start_short_trade := bidask
+if endShortTrade
+    sdiff         = (start_short_trade - bidask)
+    wins         := sdiff > 0 ? 1 : 0
+    short_trades := sdiff * lot_size 
+    trade_count  := 1
+    
+cumreturn   = cum(long_trades) + cum(short_trades)  //-- cumulative return 
+totaltrades = cum(trade_count)
+totalwins   = cum(wins)  
+totallosses = totaltrades - totalwins == 0 ? 1 : totaltrades - totalwins
+
+//------------------- Information
+
+var label lbl = na
+
+info =  ptype
+      + '\nCR='        + tostring(cumreturn,             '#.#') 
+      + '\nWinrate: '  + tostring(totalwins/totaltrades, '#.#%')       
+      + '\nBar Time: ' + tostring(barlife,               '#.#%')
+
+if show_info and barstate.islast  
+    lbl := label.new(bar_index, ohlc4, info, xloc.bar_index, yloc.price, 
+                     color.new(color.blue, 100), label.style_label_left, color.black, size.small, text.align_left)
+    label.delete(lbl[1])

@@ -1,0 +1,158 @@
+// This source code is subject to the terms of the Mozilla Public License 2.0 at https://mozilla.org/MPL/2.0/
+// © capissimo
+
+//@version=4
+study('Support and Resistance Levels (v.3)', '', true)
+
+// Support and Resistance Levels augmanted and reprocessed
+
+// Description:
+
+// This is an augmented version of my earlier script that can be found here:
+// https://www.tradingview.com/script/cDivOtB4-Support-and-Resistance-Levels/
+
+// This time it features zigzag and channel lines, signal generation and filtering
+// and performance testing. Signal generation and filtering procedures are used only 
+// for performance testing, not for the actual labelling. The labelling is governed 
+// by zigzag logic.
+
+//-------------------- Inputs
+
+lookback  = input(6,      'Lag |2..n|',             minval=2)
+filterDMI = input(false,  'Filter DMI?')
+show_chan = input(true,   'Show Channal?')
+ftype     = input('None', 'Filter Signals by',      options=['Volatility','Volume','Both','None'])
+holding_p = input(20,     'Holding Period |1..n|',  minval=1)
+
+//-------------------- System Variables
+
+var int BUY      =  1
+var int SELL     = -1
+var int HOLD     =  0
+
+//-------------------- Series 
+
+var int   signal     = HOLD
+var int   hp_counter = 0
+
+//-------------------- Custom Functions
+
+volumeBreak(thres) => hma(rsi(volume, 14), 10) > thres                     
+
+volatilityBreak(volmin, volmax) => atr(volmin) > atr(volmax)
+
+//-------------------- Logic
+
+// 0) set up a bar life counter and a filter
+float tbase   = (time - time[1]) / 1000
+float tcurr   = (timenow - time_close[1]) / 1000
+float barlife = tcurr / tbase
+
+filter =   ftype=='Volatility' ? volatilityBreak(1, 10) 
+         : ftype=='Volume'     ? volumeBreak(49) 
+         : ftype=='Both'       ? volatilityBreak(1, 10) and volumeBreak(49)
+         :                       true
+
+// 1) get positive and negative directional movements.
+[pdm, mdm, _] = dmi(14, lookback)    
+ 
+// 2) the market data is smoothed.
+dema = ema(ema(close, lookback), lookback)
+
+// 3) the momentum of the market is calculated. 
+mom1 = mom(dema, round(lookback/2))    // 1st momemtum of ma
+
+// 4) the momentum of the momentum is calculated.
+mom2 = mom(mom1, round(lookback/2))    // momemtum of momemtum of ma (2nd deviation)
+
+// 5) determine criteria
+crossmomover  = crossover(mom2, 0)
+crossmomunder = crossunder(mom2, 0)
+
+ll = lowest(low,   lookback)  // lowest low before now (this hour, today, etc.)
+hh = highest(high, lookback)  // highest high before now
+
+signal :=  crossmomover  and not filterDMI or (filterDMI and pdm>mdm) and filter ? BUY 
+         : crossmomunder and not filterDMI or (filterDMI and pdm<mdm) and filter ? SELL 
+         :                                                                         nz(signal[1])
+
+changed = change(signal)
+hp_counter := changed ? 0 : hp_counter + 1
+
+startLongTrade  = changed and signal==BUY    
+startShortTrade = changed and signal==SELL   
+endLongTrade    = (changed and signal==SELL) or (signal==BUY  and hp_counter==holding_p and not changed) 
+endShortTrade   = (changed and signal==BUY)  or (signal==SELL and hp_counter==holding_p and not changed)
+
+//-------------------- Visualization
+
+// If the second momentum crosses above zero, the first momentum will have 
+// local low and the market will be in a state when the trend comes to an end.
+
+if crossmomover       // possible low (2nd deviation is zero)
+	if not filterDMI or (filterDMI and pdm>mdm)
+        label.new(time-lookback, ll, xloc=xloc.bar_time, style=label.style_label_up, color=color.green, size=size.tiny)
+
+// If the second momentum crosses below zero, the first momentum will have 
+// local high and the market will be in a state when the trend comes to an end.
+
+if crossmomunder      // possible high
+	if not filterDMI or (filterDMI and pdm<mdm)
+        label.new(time-lookback, hh, xloc=xloc.bar_time, style=label.style_label_down, color=color.red, size=size.tiny)
+
+// Optionally, show channal
+plot(show_chan and crossmomover  and (not filterDMI or pdm>mdm) ? ll : na, style=plot.style_stepline, color=color.green)		
+plot(show_chan and crossmomunder and (not filterDMI or pdm<mdm) ? hh : na, style=plot.style_stepline, color=color.red)	
+
+// Show zigzag
+plot(crossmomover ? ll : crossmomunder ? hh : na, '', color.blue, 2, plot.style_stepline)
+
+//-------------------- Backtest
+
+show_info = input(true,  'Information')
+lot_size  = input(0.01,  'Lot Size', options=[0.01,0.1,0.2,0.3,0.5,1,2,3,5,10,20,30,50,100,1000]) 
+ubase     = input(false, 'Use Base Price?')
+
+float bidask = ubase ? (open+high+low)/3 : open
+
+var float start_long_trade  = ohlc4  
+var float long_trades       = 0.
+var float start_short_trade = ohlc4  
+var float short_trades      = 0.
+var int   wins              = 0
+var int   trade_count       = 0
+
+if startLongTrade 
+    start_long_trade := bidask 
+if endLongTrade
+    ldiff         = (bidask - start_long_trade)
+    wins         := ldiff > 0 ? 1 : 0
+    long_trades  := ldiff * lot_size   
+    trade_count  := 1
+if startShortTrade 
+    start_short_trade := bidask
+if endShortTrade
+    sdiff         = (start_short_trade - bidask)
+    wins         := sdiff > 0 ? 1 : 0
+    short_trades := sdiff * lot_size 
+    trade_count  := 1
+    
+cumreturn   = cum(long_trades) + cum(short_trades)  //-- cumulative return 
+totaltrades = cum(trade_count)
+totalwins   = cum(wins)  
+totallosses = totaltrades - totalwins == 0 ? 1 : totaltrades - totalwins
+
+//------------------- Information
+
+var label lbl = na
+
+info =  'CR='          + tostring(cumreturn,             '#.#') 
+      + '\nTrades: '   + tostring(totaltrades,           '#')
+      + '\nWin/Loss: ' + tostring(totalwins/totallosses, '#.##') 
+      + '\nWinrate: '  + tostring(totalwins/totaltrades, '#.#%')       
+      + '\nBar Time: ' + tostring(barlife,               '#.#%')
+
+if show_info and barstate.islast  
+    lbl := label.new(bar_index, ohlc4, info, xloc.bar_index, yloc.price, 
+                     color.new(color.blue, 100), label.style_label_left, color.black, size.small, text.align_left)
+    label.delete(lbl[1])

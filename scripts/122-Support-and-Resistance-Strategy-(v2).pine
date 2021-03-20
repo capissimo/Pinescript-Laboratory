@@ -8,21 +8,9 @@ study('Support and Resistance Strategy (v.2)', '', true)
 
 // Description:
 
-// This strategy uses “support” S and “resistance” R levels, which can be computed
-// using the “pivot point” (a.k.a. the “center”) C as follows:
-// C = (PH + PL + PC) / 3
-// R = 2 × C - PL 
-// S = 2 × C - PH 
-// Here PH, PL and PC are the previous day’s high, low and closing prices. 
-// One way to define a trading signal is as follows (as above, P is the current price):
-// Signal:
-// Establish long position if P > C
-// Liquidate long position if P ≥ R
-// Establish short position if P < C
-// Liquidate short position if P ≤ S
-
-// Other definitions of the pivot point (e.g., using the current trading day’s open price) 
-// and higher/lower support/resistance levels exist.
+// This is a modification of my strategy that can be found at
+// https://www.tradingview.com/script/KvFZ4LEQ-Support-and-Resistance-Strategy/
+// and uses standard signal generation and filtering procedures.
 
 //-------------------- Inputs
 

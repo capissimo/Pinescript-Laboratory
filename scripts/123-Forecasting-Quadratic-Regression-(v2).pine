@@ -1,0 +1,172 @@
+// This source code is subject to the terms of the Mozilla Public License 2.0 at https://mozilla.org/MPL/2.0/
+// © capissimo
+
+//@version=4
+study("Forecasting: Quadratic Regression (v.2)", '', true)
+
+// This is a modification of my earlier script that can be found
+// at https://www.tradingview.com/script/YnoXd2AY-forecasting-quadratic-regression/
+
+//-------------------- Inputs
+
+ptype      = input('Close', 'Dataset',                   options=['Open','High','Low','Close','HL2','OC2','OHL3','HLC3','OHLC4'])
+p          = input(5,       'QReg lag |2..n|',           minval=2)
+sp         = input(5,       'Season',                    options=[5, 21, 63, 126, 252, 3, 4, 6, 7, 8, 9, 10, 13, 15, 26, 32, 34])
+fp         = input(10,      'Forecasted Periods |2..n|', minval=2)
+mth        = input('Seasonal Naive', 'Method',           options=['Seasonal Naive','Simple Mean','Simply Naive'])
+holding_p  = input(2,       'Holding Period |1..n|',     minval=1)
+startYear  = input(2020,    'Start Year |2000..n|',      minval=2000)
+ftype      = input('Volatility', 'Filter by',            options=['Volatility','Volume','Both','None'])
+minatr     = input(1,       'Min ATR Lag |1..n|',        minval=1)
+maxatr     = input(10,      'Max ATR Lag |1..n|',        minval=1)
+vol        = input(49,      'Volume Lag  |1..n|',        minval=1)
+
+//-------------------- System Variables
+
+var int   BUY  = -1
+var int   SELL =  1
+var int   HOLD =  0
+
+//-------------------- Dynamic Arrays
+
+var int   signal     = HOLD
+var int   hp_counter = 0      //-- holding period counter
+
+//-------------------- Custom functions
+
+volumeBreak(thres)              => hma(rsi(volume, 14), 10)  
+volatilityBreak(volmin, volmax) => atr(volmin) > atr(volmax)
+
+simple_mean(x, p)    => x[1] + sma(change(x, p), p)
+simply_naive(x, p)   => sma(x, p)[1]
+seasonal_naive(x, p) => x[p] + sma(change(x, p), p) // fix: added average change
+
+//-------------------- Logic
+
+base =  ptype=='Open'  ? open
+      : ptype=='High'  ? high 
+      : ptype=='Low'   ? low 
+      : ptype=='Close' ? close 
+      : ptype=='HL2'   ? (high+low)/2 
+      : ptype=='OC2'   ? (open+close)/2 
+      : ptype=='OHL3'  ? (open+high+low)/3 
+      : ptype=='HLC3'  ? (high+low+close)/3 
+      :                  (open+high+low+close)/4
+
+filter =   ftype=='Volatility' ? volatilityBreak(minatr, maxatr) 
+         : ftype=='Volume'     ? volumeBreak(vol) 
+         : ftype=='Both'       ? volatilityBreak(minatr, maxatr) and volumeBreak(vol)
+         :                       true
+
+//== Core
+x1 = bar_index
+x2 = pow(x1,2)
+
+s11 = cum(x2) - pow(cum(x1), 2) / bar_index
+s12 = cum(x1 * x2) - (cum(x1) * cum(x2)) / bar_index
+s22 = cum(pow(x2, 2)) - pow(cum(x2), 2) / bar_index
+sy1 = cum(base * x1) - (cum(base) * cum(x1)) / bar_index
+sy2 = cum(base * x2) - (cum(base) * cum(x2)) / bar_index
+
+x1ma = sma(x1, p)
+x2ma = sma(x2, p)
+yma  = sma(base, p)
+
+b2 = ((sy1 * s22) - (sy2 * s12)) / (s22 * s11 - pow(s12, 2))
+b3 = ((sy2 * s11) - (sy1 * s12)) / (s22 * s11 - pow(s12, 2))
+b1 = yma - b2 * x1ma - b3 * x2ma
+qreg = b1 + b2 * x1 + b3 * x2
+
+forecast = mth=='Seasonal Naive' ? seasonal_naive(qreg, sp) : mth=='Simple Mean' ? simple_mean(qreg, sp) : simply_naive(qreg, sp)
+
+if year(time) >= startYear
+    signal  := base > qreg and filter ? BUY : base < qreg and filter ? SELL : nz(signal[1]) // HOLD
+//==
+
+changed         = change(signal)
+hp_counter     := changed ? 0 : hp_counter + 1
+
+startLongTrade  = changed and signal==BUY   
+startShortTrade = changed and signal==SELL   
+endLongTrade    = (signal==BUY  and hp_counter==holding_p and not changed) or (changed and signal==SELL)
+endShortTrade   = (signal==SELL and hp_counter==holding_p and not changed) or (changed and signal==BUY)
+
+clr = qreg>forecast ? color.red : qreg<forecast ? color.green : color.blue
+
+//-------------------- Visualization
+
+plot(qreg, '', color.blue, 1)
+
+var line fl = na
+if barstate.islast 
+    line.delete(fl[1])
+    fl := line.new(time, qreg, time + 60 * 60 * 24 * fp, forecast, xloc.bar_time, extend=extend.none, style=line.style_solid, color=clr, width=3)
+
+plotshape(startLongTrade  ? low   : na, 'Buy',  shape.labelup,   location.belowbar, color.blue, size=size.small)
+plotshape(startShortTrade ? high  : na, 'Sell', shape.labeldown, location.abovebar, color.red,  size=size.small)
+plot(endLongTrade         ? ohlc4 : na, '', color.blue, 2, plot.style_cross)
+plot(endShortTrade        ? ohlc4 : na, '', color.red,  2, plot.style_cross)
+
+//-------------------- Notification
+
+if changed and signal==BUY 
+    alert('Buy Alert', alert.freq_once_per_bar)  // alert.freq_once_per_bar_close
+if changed and signal==SELL 
+    alert('Sell Alert', alert.freq_once_per_bar)
+    
+alertcondition(startLongTrade,  'Buy Alert',  'Go Long!')
+alertcondition(startShortTrade, 'Sell Alert', 'Go Short!')
+
+//-------------------- Backtest
+
+show_info = input(true,  'Performance')
+lot_size  = input(0.01,  'Lot Size', options=[0.01,0.1,0.2,0.3,0.5,1,2,3,5,10,20,30,50,100,1000]) 
+ubase     = input(false, 'Use Base Price?')
+
+tbase   = (time - time[1]) / 1000
+tcurr   = (timenow - time_close[1]) / 1000
+barlife = tcurr / tbase
+
+bidask  = ubase ? (open+high+low)/3 : open
+
+var float start_long_trade  = bidask  
+var float long_trades       = 0.
+var float start_short_trade = bidask  
+var float short_trades      = 0.
+var int   wins              = 0
+var int   trade_count       = 0
+
+if startLongTrade 
+    start_long_trade := bidask 
+if endLongTrade
+    ldiff         = (bidask - start_long_trade)
+    wins         := ldiff > 0 ? 1 : 0
+    long_trades  := ldiff * lot_size   
+    trade_count  := 1
+if startShortTrade 
+    start_short_trade := bidask
+if endShortTrade
+    sdiff         = (start_short_trade - bidask)
+    wins         := sdiff > 0 ? 1 : 0
+    short_trades := sdiff * lot_size 
+    trade_count  := 1
+    
+cumreturn   = cum(long_trades) + cum(short_trades)  //-- cumulative return 
+totaltrades = cum(trade_count)
+totalwins   = cum(wins)  
+totallosses = totaltrades - totalwins == 0 ? 1 : totaltrades - totalwins
+
+//------------------- Information
+
+var label lbl = na
+
+info =  'CR='          + tostring(cumreturn,             '#.#') 
+      + '\nTrades: '   + tostring(totaltrades,           '#')
+      + '\nWin/Loss: ' + tostring(totalwins/totallosses, '#.##') 
+      + '\nWinrate: '  + tostring(totalwins/totaltrades, '#.#%')       
+      + '\nBar Time: ' + tostring(barlife,               '#.#%')
+
+if show_info and barstate.islast  
+    lbl := label.new(bar_index, ohlc4, info, xloc.bar_index, yloc.price, 
+                     color.new(color.blue, 100), label.style_label_left, color.black, size.small, text.align_left)
+    label.delete(lbl[1])

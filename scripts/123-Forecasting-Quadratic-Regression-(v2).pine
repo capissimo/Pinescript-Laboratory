@@ -4,8 +4,8 @@
 //@version=4
 study("Forecasting: Quadratic Regression (v.2)", '', true)
 
-// This is a modification of my earlier script that can be found
-// at https://www.tradingview.com/script/YnoXd2AY-forecasting-quadratic-regression/
+// This is a modification of my earlier script that can be found at
+// https://www.tradingview.com/script/YnoXd2AY-forecasting-quadratic-regression/
 
 //-------------------- Inputs
 
@@ -27,7 +27,7 @@ var int   BUY  = -1
 var int   SELL =  1
 var int   HOLD =  0
 
-//-------------------- Dynamic Arrays
+//-------------------- Helper Series
 
 var int   signal     = HOLD
 var int   hp_counter = 0      //-- holding period counter
@@ -39,7 +39,7 @@ volatilityBreak(volmin, volmax) => atr(volmin) > atr(volmax)
 
 simple_mean(x, p)    => x[1] + sma(change(x, p), p)
 simply_naive(x, p)   => sma(x, p)[1]
-seasonal_naive(x, p) => x[p] + sma(change(x, p), p) // fix: added average change
+seasonal_naive(x, p) => x[p] + sma(change(x, p), p) 
 
 //-------------------- Logic
 

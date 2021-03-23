@@ -1,5 +1,5 @@
 # Pinescript-Laboratory
-This Pinescript repository contains my scripts originally published in TradingView platform. 
+This Pinescript repository contains my scripts originally published on TradingView platform. 
 
 I make it public because I advocate for Open Source and free sharing of ideas. My work here is aimed at people with critical thinking, who are capable to take responsible decisions when it comes to investing. 
 

@@ -3,4 +3,5 @@ This Pinescript repository contains my scripts originally published on TradingVi
 
 I make it public because I advocate for Open Source and free sharing of ideas. My work there is aimed at people with critical thinking, who are capable to take responsible decisions when it comes to investing. 
 
+'Gimme Some'© Section:
 You can support me at paypal.me/capissimo and Webmoney (WMID: 437613543425). 

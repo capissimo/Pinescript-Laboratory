@@ -16,10 +16,14 @@ study('Anti-Breakout Strategy', '', true)
 
 //-------------------- Inputs
 
-ptype     = input('Close',     'Price Type',            options=['Open','High','Low','Close','HL2','OC2','OHL3','HLC3','OHLC4'])
-lag       = input(1,           'Lag |1..n|',            minval=1)
-ftype     = input('Volatility','Filter by',             options=['Volatility','Volume','Both','None'])
-holding_p = input(1,           'Holding Period |1..n|', minval=1)
+ptype     = input('Close',     'Price Type',                   options=['Open','High','Low','Close','HL2','OC2','OHL3','HLC3','OHLC4'])
+lag       = input(3,           'Lag |1..n|',                   minval=1)
+tthres    = input(1,           'Time Threshold (%) |0..100|',  minval=0, maxval=100) / 100
+ftype     = input('Volume',    'Filter Signals by',            options=['Volatility','Volume','Both','None'])
+minvol    = input(1,           'Min ATR Lag |1..n|',           minval=1)
+maxvol    = input(2,           'Max ATR Lag |1..n|',           minval=1)
+volbr     = input(49,          'Volume Level|1..n|',           minval=1)  // 49, 55
+holding_p = input(1,           'Holding Period |1..n|',        minval=1)
 draw      = input(true,        'Draw Channel?')
 
 //-------------------- System Variables
@@ -46,27 +50,31 @@ volatilityBreak(volmin, volmax) => atr(volmin) > atr(volmax)
 
 //-------------------- Logic
 
-ds        =  ptype=='Open'  ? open 
-           : ptype=='High'  ? high 
-           : ptype=='Low'   ? low 
-           : ptype=='Close' ? close 
-           : ptype=='OC2'   ? (open+close)/2 
-           : ptype=='HL2'   ? hl2 
-           : ptype=='OHL3'  ? (open+high+low)/3 
-           : ptype=='HLC3'  ? hlc3 
-           :                  ohlc4
+float tbase   = (time - time[1]) / 1000
+float tcurr   = (timenow - time_close[1]) / 1000
+float barlife = tcurr / tbase
+
+float ds      =  ptype=='Open'  ? open 
+               : ptype=='High'  ? high 
+               : ptype=='Low'   ? low 
+               : ptype=='Close' ? close 
+               : ptype=='OC2'   ? (open+close)/2 
+               : ptype=='HL2'   ? hl2 
+               : ptype=='OHL3'  ? (open+high+low)/3 
+               : ptype=='HLC3'  ? hlc3 
+               :                  ohlc4
            
-filter =   ftype=='Volatility' ? volatilityBreak(1, 10) 
-         : ftype=='Volume'     ? volumeBreak(49) 
-         : ftype=='Both'       ? volatilityBreak(1, 10) and volumeBreak(49)
-         :                       true
+bool filter   =  ftype=='Volatility' ? volatilityBreak(minvol, maxvol) 
+               : ftype=='Volume'     ? volumeBreak(volbr) 
+               : ftype=='Both'       ? volatilityBreak(minvol, maxvol) and volumeBreak(volbr)
+               :                       true
 
 //== Core
 hHigh := highest(high[1], lag)
 lLow  := lowest(low[1], lag)
 
-long  = crossover(ds, hHigh)
-short = crossunder(ds, lLow)
+bool long  = crossover(ds, hHigh)
+bool short = crossunder(ds, lLow)
 
 if long
 	barLow := low
@@ -77,23 +85,32 @@ if short
 
 signal := long and filter ? BUY : short and filter ? SELL : nz(signal[1])
 
-changed = change(signal)
+bool changed = change(signal)
 hp_counter := changed ? 0 : hp_counter + 1
 
-startLongTrade  = changed and signal==BUY    
-startShortTrade = changed and signal==SELL   
-endLongTrade    = ((not changed) and signal==BUY  and hp_counter==holding_p) or (changed and signal==SELL)  //-- TOADD: stop by trade duration
-endShortTrade   = ((not changed) and signal==SELL and hp_counter==holding_p) or (changed and signal==BUY)
+bool startLongTrade  = barlife > tthres and changed and signal==BUY    
+bool startShortTrade = barlife > tthres and changed and signal==SELL   
+bool endLongTrade    = ((not changed) and signal==BUY  and hp_counter==holding_p) or (changed and signal==SELL)  
+bool endShortTrade   = ((not changed) and signal==SELL and hp_counter==holding_p) or (changed and signal==BUY)
 
 //-------------------- Visualization
 
 plot(draw ? hHigh : na, '', color.silver, 2)
 plot(draw ? lLow  : na, '', color.silver, 2)
 
-plotshape(startLongTrade  ? low   : na, 'Buy',  shape.labelup,   location.belowbar, color.blue, size=size.small)
-plotshape(startShortTrade ? high  : na, 'Sell', shape.labeldown, location.abovebar, color.red,  size=size.small)
+plotshape(startLongTrade  ? low   : na, 'Buy',  shape.labelup,   location.belowbar, color.blue, 30, size=size.small)
+plotshape(startShortTrade ? high  : na, 'Sell', shape.labeldown, location.abovebar, color.red,  30, size=size.small)
 plot(endLongTrade         ? ohlc4 : na, '', color.blue, 1, plot.style_cross)
 plot(endShortTrade        ? ohlc4 : na, '', color.red,  1, plot.style_cross)
+
+//==================== Doji Module
+
+var string stop = '✖'
+
+bool doji = (abs(open - close) <= (high - low) * input(0.15, "Doji Size", minval=0.01, step=.01))
+
+plotchar((open-close)<0 ? doji : na, '', stop, location.abovebar, color.black) 
+plotchar((open-close)>0 ? doji : na, '', stop, location.belowbar, color.black) 
 
 //-------------------- Notification
 
@@ -108,11 +125,7 @@ show_info = input(true,  'Performance')
 lot_size  = input(0.01,  'Lot Size', options=[0.01,0.1,0.2,0.3,0.5,1,2,3,5,10,20,30,50,100,1000]) 
 ubase     = input(false, 'Use Base Price?')
 
-tbase   = (time - time[1]) / 1000
-tcurr   = (timenow - time_close[1]) / 1000
-barlife = tcurr / tbase
-
-bidask  = ubase ? (open+high+low)/3 : open
+float bidask  = ubase ? (open+high+low)/3 : open
 
 var float start_long_trade  = bidask  
 var float long_trades       = 0.

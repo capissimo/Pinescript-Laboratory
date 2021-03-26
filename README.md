@@ -1,7 +1,7 @@
 # Pinescript-Laboratory
 This Pinescript repository contains my scripts originally published on TradingView platform. 
 
-I make it public because I advocate for Open Source and free sharing of ideas. Use it at your own risk. Ple remember to place a reference to the source, though.
+I make it public because I advocate for Open Source and free sharing of ideas. Use it freely and at your own risk. Ple remember to place a reference to the source, though.
 
 ;-) 'Gimme Some'© Section (https://www.youtube.com/watch?v=904BN6HW1RI):
 

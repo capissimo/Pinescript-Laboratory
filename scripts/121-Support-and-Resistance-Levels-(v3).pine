@@ -4,7 +4,7 @@
 //@version=4
 study('Support and Resistance Levels (v.3)', '', true)
 
-// Support and Resistance Levels augmanted and reprocessed
+// Support and Resistance Levels augmented and reprocessed
 
 // Description:
 
@@ -107,9 +107,28 @@ plot(show_chan and crossmomunder and (not filterDMI or pdm<mdm) ? hh : na, style
 // Show zigzag
 plot(crossmomover ? ll : crossmomunder ? hh : na, '', color.blue, 2, plot.style_stepline)
 
+//==================== Doji
+
+var string stop = '✖'
+
+bool doji = (abs(open - close) <= (high - low) * input(0.15, "Doji Size", minval=0.01, step=.01))
+
+plotchar((open-close)<0 ? doji : na, '', stop, location.abovebar, color.black) 
+plotchar((open-close)>0 ? doji : na, '', stop, location.belowbar, color.black) 
+
+//-------------------- Notification
+
+if startLongTrade
+    alert('Buy Alert', alert.freq_once_per_bar)  // alert.freq_once_per_bar_close
+if startShortTrade
+    alert('Sell Alert', alert.freq_once_per_bar)
+    
+alertcondition(startLongTrade,  'Buy Alert',  'Go Long!')
+alertcondition(startShortTrade, 'Sell Alert', 'Go Short!')
+
 //-------------------- Backtest
 
-show_info = input(true,  'Information')
+show_info = input(true,  'Performance')
 lot_size  = input(0.01,  'Lot Size', options=[0.01,0.1,0.2,0.3,0.5,1,2,3,5,10,20,30,50,100,1000]) 
 ubase     = input(false, 'Use Base Price?')
 

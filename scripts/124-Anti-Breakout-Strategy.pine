@@ -44,7 +44,7 @@ var int   hp_counter = 0     //-- holding period counter
 
 //-------------------- Custom Functions
 
-volumeBreak(thres) => hma(rsi(volume, 14), 10)  
+volumeBreak(thres) => hma(rsi(volume, 14), 10) > thres
 
 volatilityBreak(volmin, volmax) => atr(volmin) > atr(volmax)
 

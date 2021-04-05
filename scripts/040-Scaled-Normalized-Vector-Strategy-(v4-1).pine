@@ -1,7 +1,11 @@
-//@version=4
-strategy("Scaled Normalized Vector Strategy (v.4.1)", '', false, precision=2)
+// This source code is subject to the terms of the Mozilla Public License 2.0 at https://mozilla.org/MPL/2.0/
+// © capissimo
 
-// author: capissimo
+//@version=4
+strategy("Scaled Normalized Vector Strategy (ver.4.1)", '', false, precision=2)
+
+// Description:
+
 // This modification of the Scaled Normalized Vector Strategy uses trailing stops and is optimized for lower TFs
 
 price    = input(close,  "Price Data")
@@ -37,8 +41,9 @@ f(m) => method==m
 
 vol  = useold ? security(syminfo.tickerid, tostring(tf), volume, barmerge.gaps_off, barmerge.lookahead_on) 
               : security(syminfo.tickerid, tostring(tf), volume)
-obv  = cum(change(price) > 0 ? vol : change(price) < 0 ? -vol : 0*vol)
-prix = showVol ? obv : price
+changed = change(price)
+obvvar  = cum(changed > 0 ? vol : changed < 0 ? -vol : 0*vol)
+prix = showVol ? obvvar : price
 x    = getdiff(prix, tf)
 p    = f("Swish") ? swish(x) : f("Step") ? step(x) : f("LReLU") ? lrelu(x, .8) : x
 th   = thresh/div

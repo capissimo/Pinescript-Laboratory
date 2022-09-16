@@ -1,0 +1,113 @@
+// This source code is subject to the terms of the Mozilla Public License 2.0 at https://mozilla.org/MPL/2.0/
+// © capissimo
+
+//@version=5
+indicator("Machine Learning: kNN (New Approach)", '', true, format=format.price, precision=2, timeframe="", timeframe_gaps=true)
+
+// kNN is a very robust and simple method for data classification and prediction. It is very 
+// effective if the training data is large. However, it is distinguished by difficulty at 
+// determining its main parameter, K (a number of nearest neighbors), beforehand. The 
+// computation cost is also quite high because we need to compute distance of each instance 
+// to all training samples. Nevertheless, in algorithmic trading KNN is reported to perform 
+// on a par with such techniques as SVM and Random Forest. It is also widely used in the area 
+// of data science.
+
+// The input data is just a long series of prices over time without any particular features. 
+// The value to be predicted is just the next bar's price. The way that this problem is 
+// solved for both nearest neighbor techniques and for some other types of prediction 
+// algorithms is to create training records by taking, for instance, 10 consecutive prices 
+// and using the first 9 as predictor values and the 10th as the prediction value. 
+// Doing this way, given 100 data points in your time series you could create 10 different 
+// training records. It's possible to create even more training records than 10 by creating 
+// a new record starting at every data point. For instance, you could take the first 10 data 
+// points and create a record. Then you could take the 10 consecutive data points starting at 
+// the second data point, the 10 consecutive data points starting at the third data point, etc.
+
+// By default, shown are only 10 initial data points as predictor values and the 6th as the 
+// prediction value. 
+
+// Here is a step-by-step workthrough on how to compute K nearest neighbors (KNN) algorithm for 
+// quantitative data:
+
+// 1. Determine parameter K = number of nearest neighbors. 
+// 2. Calculate the distance between the instance and all the training samples. As we are 
+// dealing with one-dimensional distance, we simply take absolute value from the instance to  
+// value of x (| x – v |). 
+// 3. Rank the distance and determine nearest neighbors based on the K'th minimum distance.
+// 4. Gather the values of the nearest neighbors.
+// 5. Use average of nearest neighbors as the prediction value of the instance.
+
+// The original logic of the algorithm was slightly modified, and as a result at approx. N=17 
+// the resulting curve nicely approximates that of the sma(20). See the description below.
+// Beside the sma-like MA this algorithm also gives you a hint on the direction of the next bar 
+// move.
+
+//-- Inputs
+
+TF    = input.timeframe('5',       'Resolution',                         ['1','3','5','10','15','30','45','60','120','180','240','480','D','W','M'])
+N     = input.int      (10,        '# of Data Points [2:n]',             2)
+K     = input.int      (100,       '# of Nearest Neighbors (K) [1:252]', 1, 252)
+ADJ   = input.bool     (true,      'Adjust Prediction',                  inline='b')
+REP   = input.bool     (false,     'Non-Repainting',                     inline='b')
+ADDON = input.string   ('Z-Score', 'Add-On',                             ['None','Pivot Pivot','Z-Score'])
+LAGP  = input.int      (5,         'Pivot Point Lag [2:n] if selected',  2)
+LAGZ  = input.int      (20,        'Z-Score Lag [2:n] if selected',      2)
+DISP  = input.string   ('Both',    'Show Outcomes',                      ['Curve','Predict','Both'])
+ODS   = input.source   (hlcc4,     'Projection Base')
+
+//-- Functions
+
+knn(data) =>  //-- calculate nearest neighbors (if any)
+    nearest_neighbors = array.new_float(0)
+    distances         = array.new_float(0)
+    
+    for i = 0 to N-1
+        float d = math.abs(data[i] - data[i+1])
+        //-- euclidean will do just as well
+        // float d = math.sqrt(math.pow(data[i] - data[i+1], 2))
+    	array.push(distances, d)
+    	int size = array.size(distances)
+    	
+    	//-- The original logic was too funky, imho :-)
+        // float new_neighbor = d<array.min(distances, size>K?K:0)?data[i+1]:0
+        // if new_neighbor > 0
+        //    array.push(nearest_neighbors, new_neighbor)
+        //-- The following logic reasonably smooths the outcome!
+        float new_neighbor = d<array.min(distances, size>K?K:0)?data[i+1]:data[i]
+        array.push(nearest_neighbors, new_neighbor)
+
+    nearest_neighbors  
+
+predict(neighbors, data) =>  //-- predict the expected price and calculate next bar's direction
+    float prediction = array.avg(neighbors)
+    int   direction  = prediction < data[ADJ?0:1] ? 1 : prediction > data[ADJ?0:1] ? -1 : 0
+    [prediction, direction] 
+
+green(g) => g>9 ? #006400 : g>8 ? #1A741A : g>7 ? #338333 : g>6 ? #4D934D : g>5 ? #66A266 : g>4 ? #80B280 : g>3 ? #99C199 : g>2 ? #B3D1B3 : g>1?  #CCE0CC : #E6F0E6
+red(g)   => g>9 ? #E00000 : g>8 ? #E31A1A : g>7 ? #E63333 : g>6 ? #E94D4D : g>5 ? #EC6666 : g>4 ? #F08080 : g>3 ? #F39999 : g>2 ? #F6B3B3 : g>1?  #F9CCCC : #FCE6E6
+
+ordinary_color(dir) =>
+    dir==1?green(9):dir==-1?red(9):na
+    
+pivot_color(h,l, p, dir) =>
+    ph = ta.highestbars(h, LAGP)==0 ? h : na
+    pl = ta.lowestbars(l, LAGP)==0   ? l  : na
+    ph and dir==1 ? green(9) : pl and dir==-1 ? red(9):na
+
+zscore_color(data, p, dir) =>
+    zs = (data - ta.sma(data, p)) / ta.stdev(data, p)  // standardize
+    zs/(p/5)>0 and dir==1 ? green(9) : zs/(p/5)<0 and dir==-1 ? red(9) : na
+
+//-- Logic
+
+rep        = REP?1:0
+[O,H,L,C]  = request.security('', TF, [open,high[rep],low[rep],close[rep]], barmerge.gaps_on, barmerge.lookahead_on)
+nn         = knn(C)
+[pred,dir] = predict(nn, C)
+clr        = ADDON=='Z-Score'?zscore_color(C, LAGZ, dir):ADDON=='Pivot Pivot'?pivot_color(H,L,LAGP, dir):ordinary_color(dir)
+
+//-- Visuals
+
+//plot(ta.sma(close,20))
+plot(DISP=='Curve'   or DISP=='Both' ? pred : na, 'kNN Curve',  clr, 3, offset=0)
+plot(DISP=='Predict' or DISP=='Both' ? ODS  : na, 'Prediction', clr, 5, plot.style_circles, offset=2, show_last=1)

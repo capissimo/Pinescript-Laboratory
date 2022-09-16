@@ -13,28 +13,53 @@ indicator("Williams %R (v.4)", "W%R-4", false, format=format.price, precision=2,
 
 //-- Inputs
 
-dset   = input.source(close, 'Dataset')
-lkb    = input.int   (14,    'Lookback', 1)
-lbound = input.float (20,    'Lower Bound [0..50]',    0,  50) / 100
-ubound = input.float (80,    'Upper Bound [51..100]', 51, 100) / 100
+base    = input.source(close, 'Dataset')
+lkb     = input.int   (12,    'Lookback', 1)
+nonrep  = input.bool  (true,  'Non-Repainting')
+lbound  = input.float (20,    'Lower Bound [0..50]',    0,  50) / 100
+ubound  = input.float (80,    'Upper Bound [51..100]', 51, 100) / 100
+feature = input.string('CCI', 'Feature', ['CCI','EMA','LSMA','Vidya'], inline='f')
+flag    = input.int   (20,    'Lag',                    1,             inline='f')
 
 //-- Functions
 
+lsma(ds, p) => 3*ta.wma(ds,p) - 2*ta.sma(ds,p)
+
+vidya(ds, p) =>
+    mom = ta.change(ds)
+    upSum = math.sum(math.max(mom, 0), p)
+    downSum = math.sum(-math.min(mom, 0), p)
+    out = (upSum - downSum) / (upSum + downSum)
+    cmo = math.abs(out)
+    alpha = 2 / (p + 1)
+    vidya = 0.0
+    vidya := ds * alpha * cmo + nz(vidya[1]) * (1 - alpha * cmo)
+
 scale(x, p) => lo = ta.lowest(x, p), (x - lo) / (ta.highest(x, p) - lo)
+
+minimax(X, p, min, max) => 
+    hi = ta.highest(X, p), lo = ta.lowest(X, p)
+    (max - min) * (X - lo)/(hi - lo) + min
 
 green(g) => g>9 ? #006400 : g>8 ? #1A741A : g>7 ? #338333 : g>6 ? #4D934D : g>5 ? #66A266 : g>4 ? #80B280 : g>3 ? #99C199 : g>2 ? #B3D1B3 : g>1?  #CCE0CC : #E6F0E6
 red(g)   => g>9 ? #E00000 : g>8 ? #E31A1A : g>7 ? #E63333 : g>6 ? #E94D4D : g>5 ? #EC6666 : g>4 ? #F08080 : g>3 ? #F39999 : g>2 ? #F6B3B3 : g>1?  #F9CCCC : #FCE6E6
 
 //-- Logic
 
-float r   = scale(dset, lkb)
-float cci = ta.cci(dset, lkb) / 100 
+float ds  = request.security('', '', base)[nonrep?1:0]
+
+float r   = scale(ds, lkb)
+float cci = ta.cci(ds, lkb) / 100 
+float ls  = minimax(lsma(ds, lkb), flag, -100, 100) 
+float vid = minimax(vidya(ds, lkb), flag, -100, 100) 
+float ema = minimax(ta.ema(ds, lkb), flag, -100, 100) 
+float f   = feature=='LSMA' ? ls : feature=='Vidya' ? vid : feature=='EMA' ? ema : cci
 color clr = r >= 0.5 ? green(9) : red(9)
 
 //-- Visuals
 
-bgcolor(cci>ubound ? green(2) : cci<-ubound ? red(2) : na) 
-hline(ubound, '', color.silver)
-hline(.5,     '', color.silver)
-hline(lbound, '', color.silver)
+bgcolor(f>ubound ? green(2) : f<lbound ? red(2) : na) 
+hline(ubound, '', color.gray)
+hline(.5,     '', color.black)
+hline(lbound, '', color.gray)
 plot(r,       '', clr, 2)

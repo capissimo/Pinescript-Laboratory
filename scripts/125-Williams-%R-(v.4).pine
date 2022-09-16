@@ -1,0 +1,40 @@
+// This source code is subject to the terms of the Mozilla Public License 2.0 at https://mozilla.org/MPL/2.0/
+// © capissimo
+
+//@version=5
+indicator("Williams %R (v.4)", "W%R-4", false, format=format.price, precision=2, timeframe="", timeframe_gaps=true)
+
+// This is an upgrade and an update of my Williams %R indicator modification.
+
+// As before this implementation is enhanced with CCI in the form of background colors. 
+// These colors can be used as a confirmation signal and indication of a current trend. 
+// Thee also can be employed in deciding when to enter/exit the market. 
+// Besides, added is a scaling function and Lower/Upper Bound inputs.
+
+//-- Inputs
+
+dset   = input.source(close, 'Dataset')
+lkb    = input.int   (14,    'Lookback', 1)
+lbound = input.float (20,    'Lower Bound [0..50]',    0,  50) / 100
+ubound = input.float (80,    'Upper Bound [51..100]', 51, 100) / 100
+
+//-- Functions
+
+scale(x, p) => lo = ta.lowest(x, p), (x - lo) / (ta.highest(x, p) - lo)
+
+green(g) => g>9 ? #006400 : g>8 ? #1A741A : g>7 ? #338333 : g>6 ? #4D934D : g>5 ? #66A266 : g>4 ? #80B280 : g>3 ? #99C199 : g>2 ? #B3D1B3 : g>1?  #CCE0CC : #E6F0E6
+red(g)   => g>9 ? #E00000 : g>8 ? #E31A1A : g>7 ? #E63333 : g>6 ? #E94D4D : g>5 ? #EC6666 : g>4 ? #F08080 : g>3 ? #F39999 : g>2 ? #F6B3B3 : g>1?  #F9CCCC : #FCE6E6
+
+//-- Logic
+
+float r   = scale(dset, lkb)
+float cci = ta.cci(dset, lkb) / 100 
+color clr = r >= 0.5 ? green(9) : red(9)
+
+//-- Visuals
+
+bgcolor(cci>ubound ? green(2) : cci<-ubound ? red(2) : na) 
+hline(ubound, '', color.silver)
+hline(.5,     '', color.silver)
+hline(lbound, '', color.silver)
+plot(r,       '', clr, 2)

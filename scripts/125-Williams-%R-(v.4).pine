@@ -18,8 +18,8 @@ lkb     = input.int   (12,    'Lookback', 1)
 nonrep  = input.bool  (true,  'Non-Repainting')
 lbound  = input.float (20,    'Lower Bound [0..50]',    0,  50) / 100
 ubound  = input.float (80,    'Upper Bound [51..100]', 51, 100) / 100
-feature = input.string('CCI', 'Feature', ['CCI','EMA','LSMA','Vidya'], inline='f')
-flag    = input.int   (20,    'Lag',                    1,             inline='f')
+feature = input.string('CCI', 'Feature', ['CCI','EMA','LSMA','Vidya','VWAP'], inline='f')
+flag    = input.int   (20,    'Lag',      1, inline='f')
 
 //-- Functions
 
@@ -50,10 +50,11 @@ float ds  = request.security('', '', base)[nonrep?1:0]
 
 float r   = scale(ds, lkb)
 float cci = ta.cci(ds, lkb) / 100 
-float ls  = minimax(lsma(ds, lkb), flag, -100, 100) 
-float vid = minimax(vidya(ds, lkb), flag, -100, 100) 
-float ema = minimax(ta.ema(ds, lkb), flag, -100, 100) 
-float f   = feature=='LSMA' ? ls : feature=='Vidya' ? vid : feature=='EMA' ? ema : cci
+float ls  = minimax(lsma(ds,   lkb), flag, -1, 1) 
+float vwp = minimax(ta.vwap(ds),     flag, -1, 1) 
+float vid = minimax(vidya(ds,  lkb), flag, -1, 1) 
+float ema = minimax(ta.ema(ds, lkb), flag, -1, 1) 
+float f   = feature=='LSMA' ? ls : feature=='Vidya' ? vid : feature=='EMA' ? ema : feature=='VWAP' ? vwp : cci
 color clr = r >= 0.5 ? green(9) : red(9)
 
 //-- Visuals

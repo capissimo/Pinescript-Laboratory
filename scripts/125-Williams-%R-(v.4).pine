@@ -18,7 +18,7 @@ lkb     = input.int   (12,    'Lookback', 1)
 nonrep  = input.bool  (true,  'Non-Repainting')
 lbound  = input.float (20,    'Lower Bound [0..50]',    0,  50) / 100
 ubound  = input.float (80,    'Upper Bound [51..100]', 51, 100) / 100
-feature = input.string('CCI', 'Feature', ['CCI','EMA','LSMA','Vidya','VWAP'], inline='f')
+feature = input.string('CCI', 'Feature', ['CCI','EMA','VWAP','LSMA','Vidya'], inline='f')
 flag    = input.int   (20,    'Lag',      1, inline='f')
 
 //-- Functions

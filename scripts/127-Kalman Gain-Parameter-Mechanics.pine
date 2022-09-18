@@ -23,6 +23,8 @@ gain3 = input.int(100,      'Gain3', 1, step=1, inline='g3')
 gain4 = input.int(1000,     'Gain4', 1, step=1, inline='g4')
 gain5 = input.int(10000,    'Gain5', 1, step=1, inline='g5')
 
+strat = input.bool(false, 'Show Strategy Code')
+
 //-- Functions
 
 kalman(x, g) =>
@@ -49,3 +51,21 @@ plot(g2 ? k2 : na, 'K2', color.red)
 plot(g3 ? k3 : na, 'K3', color.green)
 plot(g4 ? k4 : na, 'K4', color.olive)
 plot(g5 ? k5 : na, 'K5', color.gray)
+
+//-- Strategy Logic
+
+var int signal = 0
+signal := ta.crossover(k4,k5) ? -1 : ta.crossunder(k4,k5) ? 1 : nz(signal[1])
+
+changed = ta.change(signal)
+
+long  = changed and signal== 1
+short = changed and signal==-1
+
+//-- Visuals
+
+plot(strat? k4 : na, 'K4', color.olive, 2)
+plot(strat? k5 : na, 'K5', color.gray,  2)
+
+plotshape(strat and long ?low :na, '', shape.labelup,   location.belowbar, color.green, size=size.small)
+plotshape(strat and short?high:na, '', shape.labeldown, location.abovebar, color.red,   size=size.small)

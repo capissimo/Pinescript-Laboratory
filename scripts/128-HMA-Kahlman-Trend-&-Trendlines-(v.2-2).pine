@@ -1,0 +1,116 @@
+// This source code is subject to the terms of the Mozilla Public License 2.0 at https://mozilla.org/MPL/2.0/
+// © capissimo
+
+//@version=5
+indicator('HMA-Kahlman Trend & Trendlines (v.2-2)', '', true, precision=2)
+
+// This is an upgrade to HMA-Kahlman Trend & Trendlines script (https://www.tradingview.com/script/Pi7EVefr-hma-kahlman-trend-trendlines/). 
+// This gives more flexibility because you can play around with 2 parameters to Kalman function (Sharpness and K (aka. step size)).
+
+//== HMA-Kahlman Trend Module
+
+//-- Inputs
+
+base   = input.source(close, 'Dataset')
+hkmod  = input.bool  (true,  '===HMA-Kahlman Trend Module===')
+lag    = input.int   (6,     'Lookback', 2)
+nrep   = input.bool  (false, 'Non-Repainting', inline='b')
+labels = input.bool  (true,  'Labels',         inline='b')
+k      = input.bool  (true,  'Kalman',         inline='b')
+
+//-- Constants
+
+var buy = '🡅' , var sell = '🡇'
+
+//-- Variables
+
+var int state = 0
+
+//-- Functions 
+
+cGreen(g) => g>9 ? #006400 : g>8 ? #1A741A : g>7 ? #338333 : g>6 ? #4D934D : g>5 ? #66A266 : g>4 ? #80B280 : g>3 ? #99C199 : g>2 ? #B3D1B3 : g>1?  #CCE0CC : #E6F0E6
+cRed(g)   => g>9 ? #E00000 : g>8 ? #E31A1A : g>7 ? #E63333 : g>6 ? #E94D4D : g>5 ? #EC6666 : g>4 ? #F08080 : g>3 ? #F39999 : g>2 ? #F6B3B3 : g>1?  #F9CCCC : #FCE6E6
+cAqua(g)  => g>9 ? #0080FFff : g>8 ? #0080FFe5 : g>7 ? #0080FFcc : g>6 ? #0080FFb2 : g>5 ? #0080FF99 : g>4 ? #0080FF7f : g>3 ? #0080FF66 : g>2 ? #0080FF4c : g>1 ? #0080FF33 : #00C0FF19
+cPink(g)  => g>9 ? #FF0080ff : g>8 ? #FF0080e5 : g>7 ? #FF0080cc : g>6 ? #FF0080b2 : g>5 ? #FF008099 : g>4 ? #FF00807f : g>3 ? #FF008066 : g>2 ? #FF00804c : g>1 ? #FF008033 : #FF008019
+
+hma3() => p = lag/2, ta.wma(ta.wma(close, p/3)*3 - ta.wma(close, p/2) - ta.wma(close, p), p)
+
+klmf(x) =>
+    sharpness = input.float(0.5, 'Sharpness', step=.05)  
+    k         = input.float(10.0, 'K',        step=.05) //-- step size
+    var float velocity = 0.0
+    var float kf = 0.0
+    float distance = x - nz(kf[1], x)
+    float error = nz(kf[1], x) + distance * math.sqrt(sharpness*k/100)
+    velocity := nz(velocity[1], 0) + distance*k/100
+    kf := error + velocity
+
+//-- Logic
+
+float ds  = request.security('', '', base)[nrep?1:0]
+
+float a   = k ? klmf(ds)     : ta.hma(ds, lag)
+float b   = k ? klmf(hma3()) : hma3()
+float avg = math.avg(a,b)
+color c   = avg>avg[1] ? color.lime : color.red
+
+bool crossdn = c==color.red    //a > b and a[1] < b[1]
+bool crossup = c==color.lime   //b > a and b[1] < a[1]
+state := crossup ? 1 : crossdn ? -1 : nz(state[1])
+
+//-- Visuals
+
+fill(plot(a,'', color.new(c,75), 1), plot(b,'',color.new(c,55),1), color.new(c, 55))
+plot(avg, '', avg>avg[1]?cAqua(6):cPink(6), 1)
+
+plotshape(labels and ta.change(state) and state==1  ? a : na, '', shape.labelup,   location.belowbar, na, 0, buy,  cAqua(10), size=size.small)
+plotshape(labels and ta.change(state) and state==-1 ? a : na, '', shape.labeldown, location.abovebar, na, 0, sell, cPink(10), size=size.small)
+
+
+//== Trendlines Module, see https://www.tradingview.com/script/mpeEgn5J-Trendlines-JD/
+
+//-- Inputs
+
+tlmod = input.bool(false, '===Trendlines Module===')
+l1    = input.int (2,     'Pivots Lookback Window', 1)
+
+//-- Functions
+
+trendline(input_function, delay, only_up) => // Calculate line coordinates (Ax,Ay) - (Bx,By)
+    var int Ax = 0, var int Bx = 0, var float By = 0.0, var float slope = 0.0
+    Ay = fixnan(input_function)
+    if ta.change(Ay)!=0
+        Ax := time[delay], By:= Ay[1], Bx := Ax[1]
+        slope := ((Ay-By)/(Ax-Bx))
+    else
+        Ax := Ax[1], Bx := Bx[1], By := By[1]
+
+    var line trendline=na, var int Axbis=0, var float Aybis=0.0, var bool xtend=true
+    extension_time = 0
+    Axbis := Ax + extension_time
+    Aybis := (Ay + extension_time*slope)
+    if tlmod and ta.change(Ay)!=0
+        line_color = slope*time<0?(only_up?na:color.red):(only_up?color.lime:na)
+        if not na(line_color)
+            trendline = line.new(Bx,By,Axbis, Aybis, xloc.bar_time, extend=xtend?extend.none:extend.none, color=line_color, style=line.style_dotted, width=1)
+            line.delete(trendline[1])
+    slope
+	
+pivot(len) =>	
+    high_point = ta.pivothigh(high, len,len/2)
+    low_point  = ta.pivotlow(low, len,len/2)
+    slope_high = trendline(high_point, len/2,false)
+    slope_low  = trendline(low_point, len/2,true)
+    [high_point, low_point, slope_high, slope_low]
+
+//-- Logic
+
+[high_point1, low_point1, slope_high1, slope_low1] = pivot(l1) 
+
+color_high1 = slope_high1 * time<0 ? color.red : na
+color_low1  = slope_low1  * time>0 ? color.lime : na
+
+//-- Visuals
+
+plot(tlmod ? high_point1 : na, '', color_high1, 2, offset=-l1/2)
+plot(tlmod ? low_point1  : na, '', color_low1,  2, offset=-l1/2)

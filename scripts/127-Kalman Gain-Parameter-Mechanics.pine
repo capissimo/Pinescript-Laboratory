@@ -12,16 +12,16 @@ indicator('Kalman Gain Parameter Mechanics', '', true)
 ds    = input.source(close, 'Dataset')
 
 g1    = input.bool(true,    'Gain1', inline='g1') 
-g2    = input.bool(true,    'Gain2', inline='g2') 
-g3    = input.bool(true,    'Gain3', inline='g3') 
-g4    = input.bool(true,    'Gain4', inline='g4') 
-g5    = input.bool(true,    'Gain5', inline='g5') 
+g2    = input.bool(false,   'Gain2', inline='g2') 
+g3    = input.bool(false,   'Gain3', inline='g3') 
+g4    = input.bool(false,   'Gain4', inline='g4') 
+g5    = input.bool(false,   'Gain5', inline='g5') 
 
-gain1 = input.int(1,        'Gain', 1, step=1, inline='g1') 
-gain2 = input.int(10,       'Gain', 1, step=1, inline='g2')
-gain3 = input.int(100,      'Gain', 1, step=1, inline='g3')
-gain4 = input.int(1000,     'Gain', 1, step=1, inline='g4')
-gain5 = input.int(10000,    'Gain', 1, step=1, inline='g5')
+gain1 = input.int(1,        'Gain1', 1, step=1, inline='g1') 
+gain2 = input.int(10,       'Gain2', 1, step=1, inline='g2')
+gain3 = input.int(100,      'Gain3', 1, step=1, inline='g3')
+gain4 = input.int(1000,     'Gain4', 1, step=1, inline='g4')
+gain5 = input.int(10000,    'Gain5', 1, step=1, inline='g5')
 
 //-- Functions
 

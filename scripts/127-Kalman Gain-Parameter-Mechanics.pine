@@ -1,0 +1,52 @@
+// This source code is subject to the terms of the Mozilla Public License 2.0 at https://mozilla.org/MPL/2.0/
+// © capissimo
+
+//@version=5
+indicator('Kalman Gain Parameter Mechanics', '', true)
+
+// Explanation of Gain parameter of Kalman function in HMA-Kalman & Trendlines script.
+// To see better results set your Chart's timeframe to Daily.
+
+//-- Inputs
+
+ds    = input.source(close, 'Dataset')
+
+g1    = input.bool(true,    'Gain1', inline='g1') 
+g2    = input.bool(true,    'Gain2', inline='g2') 
+g3    = input.bool(true,    'Gain3', inline='g3') 
+g4    = input.bool(true,    'Gain4', inline='g4') 
+g5    = input.bool(true,    'Gain5', inline='g5') 
+
+gain1 = input.int(1,        'Gain', 1, step=1, inline='g1') 
+gain2 = input.int(10,       'Gain', 1, step=1, inline='g2')
+gain3 = input.int(100,      'Gain', 1, step=1, inline='g3')
+gain4 = input.int(1000,     'Gain', 1, step=1, inline='g4')
+gain5 = input.int(10000,    'Gain', 1, step=1, inline='g5')
+
+//-- Functions
+
+kalman(x, g) =>
+    gn = g/1000000  //-- smoothing magnitude adjustment
+    kf = 0.0
+    dk = x - nz(kf[1], x)
+    smooth = nz(kf[1],x)+dk*math.sqrt(gn*2)  //-- serves as a smoothing factor
+    velo = 0.0
+    velo := nz(velo[1],0) + (gn*dk)
+    kf := smooth+velo
+
+//-- Logic
+
+k1 = kalman(ds, gain1)
+k2 = kalman(ds, gain2)
+k3 = kalman(ds, gain3)
+k4 = kalman(ds, gain4)
+k5 = kalman(ds, gain5)
+
+//-- Visuals
+
+plot(g1 ? k1 : na, 'K1', color.orange)
+plot(g2 ? k2 : na, 'K2', color.red)
+plot(g3 ? k3 : na, 'K3', color.green)
+plot(g4 ? k4 : na, 'K4', color.olive)
+plot(g5 ? k5 : na, 'K5', color.gray)
+plot(close, 'Close', color.blue, 2)

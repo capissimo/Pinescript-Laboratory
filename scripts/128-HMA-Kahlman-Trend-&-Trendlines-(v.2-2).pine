@@ -12,8 +12,7 @@ indicator('HMA-Kahlman Trend & Trendlines (v.2-2)', '', true, precision=2)
 //-- Inputs
 
 base   = input.source(close, 'Dataset')
-hkmod  = input.bool  (true,  '===HMA-Kahlman Trend Module===')
-lag    = input.int   (6,     'Lookback', 2)
+lag    = input.int   (14,    'Lookback', 2)
 nrep   = input.bool  (false, 'Non-Repainting', inline='b')
 labels = input.bool  (true,  'Labels',         inline='b')
 k      = input.bool  (true,  'Kalman',         inline='b')

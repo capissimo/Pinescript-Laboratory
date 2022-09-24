@@ -1,0 +1,130 @@
+// This source code is subject to the terms of the Mozilla Public License 2.0 at https://mozilla.org/MPL/2.0/
+// © capissimo
+
+//@version=5
+indicator('Chop and explode (ps5)', '', false)
+
+// Description: 
+// This is a renovated version of my previous mod that was based on the original script from fhenry0331.
+
+// Added are:
+// - a data cleaning function
+// - a seasonal random index function
+// - an updated scaler and 
+// - a signalling procedure.
+
+// The following description is moved here from the old script.
+
+// The purpose of this script is to decipher chop zones from runs/movement/explosion spans. 
+// The chop is RSI movement between 40 and 60. Tight chop is RSI movement between 45 and 55. 
+// There should be an explosion after RSI breaks through 60 (long) or 40 (short). 
+// Tight chop bars are colored gray, a series of gray bars indicates a tight consolidation and 
+// should explode imminently. The longer the chop the longer the explosion will go for. 
+// The tighter the better. Loose chop (jig saw/gray bars on the silver background) will range 
+// between 40 and 60. The move begins with green and red bars. 
+// Couple it with your trading system to help stay out of chop and enter when there is a movement. 
+
+//-- Inputs
+
+BASE = input.source(close, 'Dataset',  inline='data')
+CLN  = input.bool  (false, 'Clean It', inline='data')
+LAG  = input.int   (10,    'Lookback [2..n]', 2)
+MMX  = input.int   (20,    'Minimax [2..n]',  2)
+
+//-- Constants
+
+var int BUY  = +1
+var int SELL = -1
+var int HOLD =  0
+
+//-- Variables
+
+var int signal = HOLD
+
+//-- Functions
+
+clean(data) =>  
+    pi = 2 * math.asin(1)
+    hpPeriod = .00001  
+    alpha = (1 - math.sin(2 * pi / hpPeriod)) / math.cos(2 * pi / hpPeriod)
+    hp = 0.0
+    hp := bar_index <= 5 ? data : (0.5 * (1 + alpha) * (data - data[1])) + (alpha * hp[1])
+    res = bar_index <= 5 ? data : (hp + (2 * hp[1]) + (3 * hp[2]) + (3 * hp[3]) + (2 * hp[4]) + hp[5]) / 12
+    res
+
+minimax(X, p, min, max) => 
+    hi = ta.highest(X, p), lo = ta.lowest(X, p)
+    (max - min) * (X - lo)/(hi - lo) + min
+
+norm(x, p) => (x - ta.lowest(x, p)) / (ta.highest(x, p) - ta.lowest(x, p))
+
+green(g) => g>9 ? #006400 : g>8 ? #1A741A : g>7 ? #338333 : g>6 ? #4D934D : g>5 ? #66A266 : g>4 ? #80B280 : g>3 ? #99C199 : g>2 ? #B3D1B3 : g>1?  #CCE0CC : #E6F0E6
+red(g)   => g>9 ? #E00000 : g>8 ? #E31A1A : g>7 ? #E63333 : g>6 ? #E94D4D : g>5 ? #EC6666 : g>4 ? #F08080 : g>3 ? #F39999 : g>2 ? #F6B3B3 : g>1?  #F9CCCC : #FCE6E6
+
+//-- Logic
+
+float cleaned = CLN ? clean(BASE) : BASE
+float data    = minimax(cleaned, MMX, 1, 100)  // In general, the best solution lies in scaling the price
+float up      = ta.rma(+math.max(ta.change(data), 0), LAG)
+float down    = ta.rma(-math.min(ta.change(data), 0), LAG)
+float rsi     = down == 0 ? 100 : up == 0 ? 0 : 100 - (100 / (1 + up / down))
+
+bool long     = rsi > 60
+bool short    = rsi < 40 
+
+signal := long ? BUY : short ? SELL : nz(signal[1])
+
+changed = ta.change(signal)
+
+bool startedLong  = changed and signal==BUY
+bool endedLong    = changed and signal==SELL
+bool startedShort = changed and signal==SELL
+bool endedShort   = changed and signal==BUY
+
+color long_range  = long  ? green(8) : na
+color short_range = short ? red(8)   : na
+
+//== Dynamic Seasonal Random Index
+
+SRI    = input.bool (false, 'SRI')
+minlen = input.int  (5,     'Season',         1,      group='Seasonal Random Index')
+maxlen = input.int  (50,    'Lookback',       1,      group='Seasonal Random Index')
+pct    = input.float(10.,   'Adaptation (%)', 0, 100, group='Seasonal Random Index') / 100.0	
+
+dlen = math.avg(minlen, maxlen)   //-- dynamic len
+dlen := ta.atr(10) > ta.atr(40) ? math.max(minlen, dlen * (1 - pct)) : math.min(maxlen, dlen * (1 + pct))
+d = int(dlen[0])
+
+sri = cleaned * (cleaned / ( (cleaned + cleaned[minlen]) / 2 ))  //-- Seasonal random index
+
+seasoned   = norm(sri, d) * 100
+deseasoned = norm(cleaned - sri, d) * 100
+avs        = math.avg(seasoned, deseasoned)
+cross      = ta.cross(seasoned, deseasoned)
+
+//-- Visuals
+
+plot(0,   '', na), plot(100, '', na)  //-- dummies
+
+hline(50, '', color.silver, hline.style_dotted)
+l1 = hline(70, '', color.silver, hline.style_dotted)
+l2 = hline(30, '', color.silver, hline.style_dotted)
+l3 = hline(60, '', color.new(color.silver, 100), hline.style_dotted)
+l4 = hline(40, '', color.new(color.silver, 100), hline.style_dotted)
+l5 = hline(55, '', color.new(color.silver, 100), hline.style_dotted)
+l6 = hline(45, '', color.new(color.silver, 100), hline.style_dotted)
+fill(l1, l3, color.new(color.green,  60))
+fill(l3, l4, color.new(color.silver, 95))
+fill(l4, l2, color.new(color.red,    60))
+fill(l5, l6, color.new(color.silver, 80))
+
+fill(plot(SRI ? seasoned : na, '', color.new(color.blue,100)), 
+     plot(SRI ? deseasoned : na, '', color.new(color.blue,100)), color.new(seasoned > deseasoned ? green(4) : red(4), 50))
+plot(SRI ? avs : na, '', color.silver)
+plot(SRI and cross ? avs : na, '', color.black, 1, plot.style_circles)
+
+plot(rsi, '', color.black)
+plot(rsi, '', long_range,  3, plot.style_linebr)
+plot(rsi, '', short_range, 3, plot.style_linebr)
+plotshape(startedLong,  'Long',  shape.labelup,   location.bottom, color.blue, 0, size=size.tiny)
+plotshape(startedShort, 'Short', shape.labeldown, location.top,    color.red,  0, size=size.tiny)

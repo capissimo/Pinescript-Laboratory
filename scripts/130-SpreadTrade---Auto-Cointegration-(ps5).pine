@@ -1,0 +1,18 @@
+// Auto-Cointegration-Based Pair Trading Strategy (revised version)
+
+// There are three popular styles of Pair trading: distance-based pair trading, 
+// correlation-based pair trading and cointegration-based pair trading. Typically,
+// they require preliminary statistical estimation of the viability of the
+// corresponding strategy. 
+// The Cointegration strategy boild down to shorting the outperforming instrument  
+// and going long on the underperforming instrument whenever the temporary correlation 
+// weakens which means one instrument is going up and another is going down.
+// Apart from the typical cointegration strategy which employs two cointegrated 
+// instruments, this script uses just one instrument, in base timeframe and in 
+// lagged timeframe. So in fact this an auto-cointegration strategy, or better
+// still, an auto-correlation strategy.
+// Notice that each moving average function may require different Threshold 
+// settings.Thr orange cross symbol indicates the exit points. To filter out
+// the signals use higher values for the LongWindow and the Threshold parameters.
+// Also pay attention that in some cases with some moving averages the color of
+// the signals has to be inverted.

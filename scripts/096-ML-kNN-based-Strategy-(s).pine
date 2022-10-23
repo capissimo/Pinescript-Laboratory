@@ -1,8 +1,8 @@
 // This source code is subject to the terms of the Mozilla Public License 2.0 at https://mozilla.org/MPL/2.0/
 // © capissimo
 
-//@version=4
-study("Machine Learning: kNN-based Strategy (s)", '', true, precision=4, max_labels_count=200)
+//@version=5
+indicator('Machine Learning: kNN-based Strategy', 'ML-kNN', true, max_labels_count=300, format=format.price, precision=2, timeframe="", timeframe_gaps=true)
 
 // kNN-based Strategy (FX and Crypto)
 // Description: 
@@ -27,71 +27,94 @@ study("Machine Learning: kNN-based Strategy (s)", '', true, precision=4, max_lab
 // Asset class: Equities, Futures, ETFs, Currencies and Commodities
 // Dataset: FX Minutes/Hours+++/Days
 
-//-------------------- Inputs
+//-- Preset Dates
 
-ind         = input('All','Indicator',   options=['RSI','ROC','CCI','All'])
-fast        = input(14,   'Fast Period', minval=1)
-slow        = input(28,   'Slow Period', minval=2)
-fltr        = input(false,'To Filter Out Signals By Volatility?')
+int startdate = timestamp('01 Jan 2000 00:00:00 GMT+10')
+int stopdate  = timestamp('31 Dec 2025 23:45:00 GMT+10')
 
-startYear   = input(2000, 'Training Start Year',  minval=2000)
-startMonth  = input(1,    'Training Start Month', minval=1, maxval=12)
-startDay    = input(1,    'Training Start Day',   minval=1, maxval=31)
-stopYear    = input(2021, 'Training Stop Year',   minval=2000)
-stopMonth   = input(12,   'Training Stop Month',  minval=1, maxval=12)
-stopDay     = input(31,   'Training Stop Day',    minval=1, maxval=31)
+//-- Inputs
 
-//-------------------- Global Variables
+Indicator  = input.string('All', 'Indicator',   ['RSI','ROC','CCI','Volume','All'])
+ShortWinow = input.int   (14,    'Short Period [1..n]', 1)
+LongWindow = input.int   (28,    'Long Period [2..n]',  2)
+Filter     = input.bool  (false, 'To Filter Out Signals By Volatility?')
+BaseK      = input.int   (252,   'Base No. of Neighbours (K) [5..n]', 5)
+StartDate  = input.time  (startdate, 'Start Date')
+StopDate   = input.time  (stopdate,  'Stop Date')
 
-var BUY = 1, var SELL = -1, var HOLD = 0
+//-- Constants
 
-var k   = floor(sqrt(252))  // k Value for kNN
+var int BUY   = 1
+var int SELL  =-1
+var int CLEAR = 0
 
-//-------------------- Custom Functions
+var int k     = math.floor(math.sqrt(BaseK))  // k Value for kNN algo
 
-cAqua(g) => g>9?#0080FFff:g>8?#0080FFe5:g>7?#0080FFcc:g>6?#0080FFb2:g>5?#0080FF99:g>4?#0080FF7f:g>3?#0080FF66:g>2?#0080FF4c:g>1?#0080FF33:#00C0FF19
-cPink(g) => g>9?#FF0080ff:g>8?#FF0080e5:g>7?#FF0080cc:g>6?#FF0080b2:g>5?#FF008099:g>4?#FF00807f:g>3?#FF008066:g>2?#FF00804c:g>1?#FF008033:#FF008019
-
-//-------------------- Logic
-
-periodStart = timestamp(startYear, startMonth, startDay, 0, 0)
-periodStop  = timestamp(stopYear,  stopMonth,  stopDay, 0, 0)
-
-// 3 pairs of predictor indicators, long and short each
-rs = rsi(close, slow), rf = rsi(close, fast)
-cs = cci(close, slow), cf = cci(close, fast)
-os = roc(close, slow), of = roc(close, fast)
-// TOADD or TOTRYOUT:
-//    cmo(close, slow), cmo(close, fast)
-//    mfi(close, slow), mfi(close, fast)
-//    mom(close, slow), mom(close, fast)
-f1 = ind=='RSI' ? rs : ind=='ROC' ? os : ind=='CCI' ? cs : avg(rs, os, cs)
-f2 = ind=='RSI' ? rf : ind=='ROC' ? of : ind=='CCI' ? cf : avg(rf, of, cf)
-
-// Classification data, what happens on the next bar
-class = close[1]<close[0] ? SELL: close[1]>close[0] ? BUY : HOLD
+//-- Variable
 
 // Training data, normalized to the range of [0,...,100]
-var feature1   = array.new_float(0)  // [0,...,100]
-var feature2   = array.new_float(0)  //    ...
-var directions = array.new_int(0)    // [-1; +1]
+var array<float> feature1   = array.new_float(0)  // [0,...,100]
+var array<float> feature2   = array.new_float(0)  //    ...
+var array<int>   directions = array.new_int(0)    // [-1; +1]
 
 // Result data
-var predictions     = array.new_int(0)
-var prediction      = 0.
+var array<int>   predictions = array.new_int(0)
+var float        prediction  = 0.0
 
-var startLongTrade  = false 
-var startShortTrade = false
-var endLongTrade    = false  
-var endShortTrade   = false  
+// Signals
+var int          signal      = CLEAR
+
+//-- Functions
+
+minimax(float x, int p, float min, float max) => 
+    float hi = ta.highest(x, p), float lo = ta.lowest(x, p)
+    (max - min) * (x - lo)/(hi - lo) + min
+
+cAqua(int g) => g>9?#0080FFff:g>8?#0080FFe5:g>7?#0080FFcc:g>6?#0080FFb2:g>5?#0080FF99:g>4?#0080FF7f:g>3?#0080FF66:g>2?#0080FF4c:g>1?#0080FF33:#00C0FF19
+cPink(int g) => g>9?#FF0080ff:g>8?#FF0080e5:g>7?#FF0080cc:g>6?#FF0080b2:g>5?#FF008099:g>4?#FF00807f:g>3?#FF008066:g>2?#FF00804c:g>1?#FF008033:#FF008019
+
+inside_window(float start, float stop) =>  
+    time >= start and time <= stop ? true : false
+
+//-- Logic
+
+bool window = inside_window(StartDate, StopDate)
+
+// 3 pairs of predictor indicators, long and short each
+float rs = ta.rsi(close,   LongWindow),        float rf = ta.rsi(close,   ShortWinow)
+float cs = ta.cci(close,   LongWindow),        float cf = ta.cci(close,   ShortWinow)
+float os = ta.roc(close,   LongWindow),        float of = ta.roc(close,   ShortWinow)
+float vs = minimax(volume, LongWindow, 0, 99), float vf = minimax(volume, ShortWinow, 0, 99)
+
+// TOADD or TOTRYOUT:
+//    ta.cmo(close, LongWindow), ta.cmo(close, ShortWinow)
+//    ta.mfi(close, LongWindow), ta.mfi(close, ShortWinow)
+//    ta.mom(close, LongWindow), ta.mom(close, ShortWinow)
+
+float f1 = switch Indicator
+    'RSI'    => rs 
+    'CCI'    => cs 
+    'ROC'    => os 
+    'Volume' => vs 
+    => math.avg(rs, cs, os, vs)
+
+float f2 = switch Indicator
+    'RSI'    => rf 
+    'CCI'    => cf
+    'ROC'    => of
+    'Volume' => vf 
+    => math.avg(rf, cf, of, vf)
+
+// Classification data, what happens on the next bar
+int class_label = close[1]<close[0] ? SELL: close[1]>close[0] ? BUY : CLEAR
 
 // Use particular training period
-if time >= periodStart and time <= periodStop
+if window
     // Store everything in arrays. Features represent a square 100 x 100 matrix,
     // whose row-colum intersections represent class labels, showing historic directions
     array.push(feature1, f1)
     array.push(feature2, f2)
-    array.push(directions, class)
+    array.push(directions, class_label)
 
 // Ucomment the followng statement (if barstate.islast) and tab everything below
 // between BOBlock and EOBlock marks to see just the recent several signals gradually 
@@ -102,13 +125,13 @@ if time >= periodStart and time <= periodStop
 //==BOBlock	
 
 // Core logic of the algorithm
-size   = array.size(directions)
-maxdist = -999.
+int   size    = array.size(directions)
+float maxdist = -999.0
 // Loop through the training arrays, getting distances and corresponding directions.
 for i=0 to size-1
     // Calculate the euclidean distance of current point to all historic points,
     // here the metric used might as well be a manhattan distance or any other.
-    d = sqrt(pow(f1 - array.get(feature1, i), 2) + pow(f2 - array.get(feature2, i), 2))
+    float d = math.sqrt(math.pow(f1 - array.get(feature1, i), 2) + math.pow(f2 - array.get(feature2, i), 2))
     
     if d > maxdist
         maxdist := d
@@ -133,79 +156,63 @@ prediction := array.sum(predictions)
 // Over here is a simple long/short interpretation of the prediction, 
 // but of course one could also use the quality of the prediction (+5 or +1) in some sort of way,
 // ex. for position sizing.
-    
-signal = HOLD
-signal := prediction > 0 ? BUY : prediction < 0 ? SELL : nz(signal[1])  // HOLD
 
-filter           = fltr ? atr(13) > atr(40) : true 
-startLongTrade  := change(signal) and signal==BUY  and filter // filter out by high volatility, 
-startShortTrade := change(signal) and signal==SELL and filter // or ex. atr(1) > atr(10)...
-endLongTrade    := change(signal) and signal==SELL //TOADD: stop by trade duration
-endShortTrade   := change(signal) and signal==BUY  
+bool long  = prediction > 0
+bool short = prediction < 0
 
-//-------------------- Rendering
+signal := long ? BUY : short ? SELL : nz(signal[1])  // CLEAR
 
-plotshape(startLongTrade  ? low  : na, 'Buy',  shape.labelup,   location.belowbar, cAqua(prediction*5),  size=size.small)  // color intensity correction
-plotshape(startShortTrade ? high : na, 'Sell', shape.labeldown, location.abovebar, cPink(-prediction*5), size=size.small)
-plot(endLongTrade         ? high : na, 'StopBuy',  cAqua(6), 2, plot.style_cross)
-plot(endShortTrade        ? low  : na, 'StopSell', cPink(6), 2, plot.style_cross)
+int  changed         = ta.change(signal)
+bool filter          = Filter ? ta.atr(10) > ta.atr(40) : true 
+bool startLongTrade  = changed and signal==BUY  and filter  // filter out by volatility, 
+bool startShortTrade = changed and signal==SELL and filter  // or ex. ta.atr(1) > ta.atr(10)...
+bool endLongTrade    = changed and signal==SELL  // TOADD: stop by trade duration
+bool endShortTrade   = changed and signal==BUY  
 
-//-------------------- Alerting
+float maxpos = ta.highest(high, 10)
+float minpos = ta.lowest (low,  10)
+
+//-- Visuals
+
+plotshape(startLongTrade  ? minpos : na, 'Buy',      shape.labelup,   location.belowbar, cAqua(int(prediction*5)),  size=size.small)  // color intensity correction
+plotshape(startShortTrade ? maxpos : na, 'Sell',     shape.labeldown, location.abovebar, cPink(int(-prediction*5)), size=size.small)
+plot(endLongTrade         ? ohlc4  : na, 'StopBuy',  cAqua(6), 3, plot.style_cross)
+plot(endShortTrade        ? ohlc4  : na, 'StopSell', cPink(6), 3, plot.style_cross)
+
+//-- Notification
+
+// if changed and signal==BUY 
+//     alert('Buy Alert', alert.freq_once_per_bar)  // alert.freq_once_per_bar_close
+// if changed and signal==SELL 
+//     alert('Sell Alert', alert.freq_once_per_bar)
 
 alertcondition(startLongTrade,  'Buy',  'Go long!')
 alertcondition(startShortTrade, 'Sell', 'Go short!') 
-alertcondition(startLongTrade or startShortTrade, 'Alert', 'Deal Time!')
+//alertcondition(startLongTrade or startShortTrade, 'Alert', 'Deal Time!')
 
-//-------------------- Backtesting
+//-------------------- Backtesting (TODO)
 
-show_info = input(true, '===Information===')
-lot_size  = input(0.01,  'Lot Size', options=[0.01,0.1,0.2,0.3,0.5,1,2,3,5,10,20,30,50,100,1000]) 
+// show_cumtr = input.bool (false, 'Show Trade Return?')
+// lot_size   = input.float(100.0, 'Lot Size', [0.1,0.2,0.3,0.5,1,2,3,5,10,20,30,50,100,1000,2000,3000,5000,10000]) 
 
-tbase   = (time - time[1]) / 1000
-tcurr   = (timenow - time_close[1]) / 1000
-barlife = tcurr / tbase
+// var start_lt     = 0.  
+// var long_trades  = 0.
+// var start_st     = 0.  
+// var short_trades = 0.
 
-bidask = (open+high+low)/3
-
-var float start_long_trade  = bidask  
-var float long_trades       = 0.
-var float start_short_trade = bidask  
-var float short_trades      = 0.
-var int   wins              = 0
-var int   trade_count       = 0
-
-if startLongTrade 
-    start_long_trade := bidask 
-if endLongTrade
-    ldiff         = (bidask - start_long_trade)
-    wins         := ldiff > 0 ? 1 : 0
-    long_trades  := ldiff * lot_size   
-    trade_count  := 1
-if startShortTrade 
-    start_short_trade := bidask
-if endShortTrade
-    sdiff         = (start_short_trade - bidask)
-    wins         := sdiff > 0 ? 1 : 0
-    short_trades := sdiff * lot_size 
-    trade_count  := 1
+// if startLongTrade 
+//     start_lt := ohlc4 
+// if endLongTrade
+//     long_trades := (open - start_lt) * lot_size  
+// if startShortTrade 
+//     start_st := ohlc4 
+// if endShortTrade
+//     short_trades := (start_st - open) * lot_size 
     
-cumreturn   = cum(long_trades) + cum(short_trades)  //-- cumulative return 
-totaltrades = cum(trade_count)
-totalwins   = cum(wins)  
-totallosses = totaltrades - totalwins == 0 ? 1 : totaltrades - totalwins
-
-//------------------- Information
-
-var label lbl = na
-
-info =  'CR='          + tostring(cumreturn,             '#.#') 
-      + '\nTrades: '   + tostring(totaltrades,           '#')
-      + '\nWin/Loss: ' + tostring(totalwins/totallosses, '#.##') 
-      + '\nWinrate: '  + tostring(totalwins/totaltrades, '#.#%')       
-      + '\nBar Time: ' + tostring(barlife,               '#.#%')
-
-if show_info and barstate.islast  
-    lbl := label.new(bar_index, ohlc4, info, xloc.bar_index, yloc.price, 
-                     color.new(color.blue, 100), label.style_label_left, color.black, size.small, text.align_left)
-    label.delete(lbl[1])
+// cumreturn = ta.cum(long_trades) + ta.cum(short_trades) 
     
+// var label lbl = na
+// if show_cumtr //and barstate.islast  
+//     lbl := label.new(bar_index+10, close, 'CumReturn: ' + str.tostring(cumreturn, '#.#'), xloc.bar_index, yloc.price, 
+//                      color.new(color.blue, 100), label.style_label_left, color.black, size.small, text.align_left)
+//     label.delete(lbl[1])

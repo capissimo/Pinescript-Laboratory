@@ -1,0 +1,96 @@
+// This source code is subject to the terms of the Mozilla Public License 2.0 at https://mozilla.org/MPL/2.0/
+// © capissimo
+
+//@version=5
+indicator("Bollinger Bands Signals", 'BBS', true, timeframe="", timeframe_gaps=true)   // UPDATED!!!
+
+// Description:
+// This indicator works well in trending markets on long runs and in mean-reverting markets, at almost any timeframe. 
+// That said, higher timeframes are much preferred for their intrinsic ability to cut out noise.
+// Be mindful, the script shows somewhat erratic jigsaw-like behaviour during consolidation periods when the price
+// jupms up and down in indecision which way to go. Fortunately, there are scripts out there that detect such periods.
+// You can choose between 4 Moving Averages, Vidya being the default. Period, Deviation and Bands Width parameters
+// all all of them affect the signal generation.
+
+// For the Pine Script coder this script is pretty obvious. 
+// It uses a standard technical analysis indicator - Bollinger Bands - and appends it with a 'width' parameter and
+// a signal generation procedure.
+// The signal generation procedure is the heart of this script that keeps the script pumping signals.
+// The BB width is used as a filter.
+// You can use this procedure in your own scripts and it will continue generate signals according to your rules.
+
+
+//-- Inputs
+
+Data   = input.source(close,   'Dataset')
+Ma     = input.string('Vidya', 'Base Moving Average', ['EMA','SMA','WMA','Vidya'])
+Period = input.int   (42,      'Period [1..n]', 1)
+Mult   = input.float (2.0,     'Deviation [0.01..50]', minval=0.01, maxval=50, step=0.01)
+Width  = input.float (0.019,   'Bands Width [0.0001..0.1]',  minval=0.0001, maxval=0.1, step=0.0001)
+Offset = input.int   (0,       'Offset [-500..+500]', -500, 500)
+
+//-- Constants
+
+var string up = 'Δ' 
+var string dn = '∇'
+
+type SignalType    // enum
+    int BUY   = 1
+    int SELL  =-1
+    int CLEAR = 0
+
+//-- Variables
+
+var SignalType stype  = SignalType.new()
+var int        signal = stype.CLEAR
+
+//-- Functions
+
+vidya(float x, int p) =>
+    float mom = ta.change(x)
+    float upSum = math.sum(math.max(mom, 0), p)
+    float downSum = math.sum(-math.min(mom, 0), p)
+    float cmo = math.abs((upSum - downSum) / (upSum + downSum))
+    float alpha = 2 / (p + 1)
+    float vidya = 0.0
+    vidya := x * alpha * cmo + nz(vidya[1]) * (1 - alpha * cmo)
+
+//-- Logic
+
+float basis = switch Ma
+    'EMA'  => ta.ema(Data, Period)
+    'SMA'  => ta.sma(Data, Period)
+    'WMA'  => ta.wma(Data, Period)
+    => vidya(Data, Period)
+float dev   = Mult * ta.stdev(Data, Period)
+float upper = basis + dev
+float lower = basis - dev
+float width = (upper-lower)/basis
+
+// signal generation procedure
+bool long  = (ta.crossunder(close, lower) or close>basis or close>lower) and width>Width    
+bool short = (ta.crossover (close, upper) or close<basis or close<upper) and width>Width    
+
+// assemble a signal
+signal := long  ? stype.BUY  : 
+          short ? stype.SELL : 
+          nz(signal[1])
+
+int  changed         = ta.change(signal) 
+bool long_condition  = changed and signal==stype.BUY  
+bool short_condition = changed and signal==stype.SELL
+
+//-- Visuals
+
+plot(basis,      "Basis", color=#FF6D00, offset=Offset)
+p1 = plot(upper, "Upper", color=#2962FF, offset=Offset)
+p2 = plot(lower, "Lower", color=#2962FF, offset=Offset)
+fill(p1, p2, color.rgb(33, 150, 243, 95), "Background")
+plotshape(long_condition,  '', shape.labelup,   location.belowbar, color.green, 0, up, color.white, size=size.tiny)
+plotshape(short_condition, '', shape.labeldown, location.abovebar, color.red,   0, dn, color.white, size=size.tiny)
+
+//-- Notification
+
+alertcondition(long_condition,  'Go long',  'Upturn!')
+alertcondition(short_condition, 'Go short', 'Downturn!')
+alertcondition(long_condition or short_condition, 'Reversal', 'Time to ACT!')

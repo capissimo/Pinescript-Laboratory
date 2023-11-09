@@ -1,0 +1,214 @@
+// This source code is subject to the terms of the Mozilla Public License 2.0 at https://mozilla.org/MPL/2.0/
+// © capissimo
+
+//@version=5
+indicator('Machine Learning: kNN-based Strategy', 'ML-kNN', true, max_labels_count=300, format=format.price, precision=2, timeframe="", timeframe_gaps=true)
+
+// kNN-based Strategy (FX and Crypto)
+// Description: 
+// This strategy uses a classic machine learning algorithm - k Nearest Neighbours (kNN) - 
+// to let you find a prediction for the next (tomorrow's, next month's, etc.) market move. 
+// Being an unsupervised machine learning algorithm, kNN is one of the most simple learning algorithms. 
+
+// To do a prediction of the next market move, the kNN algorithm uses the historic data, 
+// collected in 3 arrays - feature1, feature2 and directions, - and finds the k-nearest 
+// neighbours of the current indicator(s) values. 
+
+// The two dimensional kNN algorithm just has a look on what has happened in the past when 
+// the two indicators had a similar level. It then looks at the k nearest neighbours, 
+// sees their state and thus classifies the current point.
+
+// The kNN algorithm offers a framework to test all kinds of indicators easily to see if they 
+// have got any *predictive value*. One can easily add cog, wpr and others.
+// Note: TradingViews's playback feature helps to see this strategy in action.
+// Warning: Signals ARE repainting.
+
+// Style tags: Trend Following, Trend Analysis
+// Asset class: Equities, Futures, ETFs, Currencies and Commodities
+// Dataset: FX Minutes/Hours+++/Days
+
+//-- Inputs
+
+StartDate = input.time  (timestamp('01 Jan 2000 00:00:00 GMT+10'), 'Start Date')
+StopDate  = input.time  (timestamp('31 Dec 2025 23:45:00 GMT+10'),  'Stop Date')
+Dist      = input.string('Euclidean', 'Distance Metric', ['Euclidean','Chebyshev'])
+Indicator = input.string('All',    'Indicator',   ['RSI','ROC','CCI','Volume','All'])
+Short     = input.int   (14,       'Short Period [1..n]', 1)
+Long      = input.int   (28,       'Long Period [2..n]',  2)
+BaseK     = input.int   (252,      'Base No. of Neighbours (K) [5..n]', 5)
+Filter    = input.bool  (false,    'Volatility Filter', inline='bools')
+Clear     = input.bool  (false,    'Add CLEAR State',   inline='bools', tooltip='Add CLEAR state into the signal calculation')
+Lookback  = input.int   (1,        'Lookback', 1)
+Bars      = input.int   (500,      'Trades Max Bar Count [2..5000]', 2, 5000)
+
+//-- Constants
+
+type SignalType
+    int BUY   = 1
+    int SELL  =-1
+    int CLEAR = 0
+
+var int k      = math.floor(math.sqrt(BaseK))  // k Value for kNN algo
+var color aqua = #0080FFff
+var color pink = #FF0080ff
+
+//-- Variables
+
+var SignalType   stype  = SignalType.new()
+var int          signal = stype.CLEAR
+
+// Training data, normalized to the range of [0,...,100]
+var array<float> feature1   = array.new_float(1)  // [0,...,100]
+var array<float> feature2   = array.new_float(1)  //    ...
+var array<int>   directions = array.new_int(1)    // [-1; +1]
+
+// Result data
+var array<int>   predictions = array.new_int(0)
+var float        prediction  = 0.0
+var array<int>   bars        = array.new<int>(1, 0) // array used as a container for inter-bar variables
+
+//-- Functions
+
+minimax(float x, int p, float min, float max) => 
+    float hi = ta.highest(x, p), float lo = ta.lowest(x, p)
+    (max - min) * (x - lo)/(hi - lo) + min
+
+inside_window(float start, float stop) =>  
+    time >= start and time <= stop ? true : false
+
+//-- Logic
+
+bool window = inside_window(StartDate, StopDate)
+
+float basevolat        = math.sqrt(252) * ta.variance(nz(close), 252)
+// float vol_scaled       = minimax(nz(volume), 0, 0, 99)
+// float volat_scaled     = minimax(nz(basevolat), 0, 0, 99)
+// float vol_volat_scaled = nz(volume)*nz(basevolat) 
+
+//float vs = minimax(nz(volume), 1440, 0, 99), float vf = minimax(nz(basevolat), 1440, 0, 99)
+
+
+// 3 pairs of predictor indicators, long and short each
+float rs = ta.rsi(close,   Long),        float rf = ta.rsi(close,   Short)
+float cs = ta.cci(close,   Long),        float cf = ta.cci(close,   Short)
+float os = ta.roc(close,   Long),        float of = ta.roc(close,   Short)
+float vs = minimax(volume, Long, 0, 100), float vf = minimax(volume, Short, 0, 100)
+
+// TOADD or TOTRYOUT:
+//    ta.cmo(close, LongWindow), ta.cmo(close, ShortWinow)
+//    ta.mfi(close, LongWindow), ta.mfi(close, ShortWinow)
+//    ta.mom(close, LongWindow), ta.mom(close, ShortWinow)
+
+float f1 = switch Indicator
+    'RSI'    => rs 
+    'CCI'    => cs 
+    'ROC'    => os 
+    'Volume' => vs 
+    => math.avg(rs, cs, os, vs)
+
+float f2 = switch Indicator
+    'RSI'    => rf 
+    'CCI'    => cf
+    'ROC'    => of
+    'Volume' => vf 
+    => math.avg(rf, cf, of, vf)
+
+// Classification data, what happens on the next bar
+int class_label = int(math.sign(close[Lookback] - close[0])) 
+// int class_label = close[Lookback]<close[0] ? SELL: close[Lookback]>close[0] ? stype.BUY : stype.CLEAR
+
+// Use particular training period
+if window
+    // Store everything in arrays. Features represent a square 100 x 100 matrix,
+    // whose row-colum intersections represent class labels, showing historic directions
+    array.push(feature1, f1)
+    array.push(feature2, f2)
+    array.push(directions, class_label)
+
+// Ucomment the followng statement (if barstate.islast) and tab everything below
+// between BOBlock and EOBlock marks to see just the recent several signals gradually 
+// showing up, rather than all the preceding signals
+
+//if barstate.islast   
+
+//==BOBlock	
+
+// Core logic of the algorithm
+int   size    = array.size(directions)
+float maxdist = -999.0
+// Loop through the training arrays, getting distances and corresponding directions.
+for i=0 to size-1
+    // Calculate the euclidean distance of current point to all historic points,
+    // here the metric used might as well be a manhattan distance or any other.
+    // IMPORTANT! Distance and squared distance are monotonically related, 
+    // so both metrics give the same answer. Adding the square root operation increases 
+    // code complexity and computation time with no impact on the results, so it can simply 
+    // be omitted. So no math.sqrt() here!
+    float d = switch Dist
+        'Euclidean' => math.pow(f1 - array.get(feature1, i), 2) + math.pow(f2 - array.get(feature2, i), 2)
+        'Chebyshev' => math.abs(math.max(f1 - array.get(feature1, i), f2 - array.get(feature2, i)))  // mod of chebyshev distance
+    
+    if d > maxdist
+        maxdist := d
+        if array.size(predictions) >= k
+            array.shift(predictions)
+        array.push(predictions, array.get(directions, i))
+        
+//==EOBlock	
+
+// Note: in this setup there's no need for distances array (i.e. array.push(distances, d)),
+//       but the drawback is that a sudden max value may shadow all the subsequent values.
+// One of the ways to bypass this is to:
+// 1) store d in distances array,
+// 2) calculate newdirs = bubbleSort(distances, directions), and then 
+// 3) take a slice with array.slice(newdirs) from the end
+    	
+// Get the overall prediction of k nearest neighbours
+prediction := array.sum(predictions)   
+
+bool filter = Filter ? ta.atr(10) > ta.atr(40) : true // filter out by volatility or ex. ta.atr(1) > ta.atr(10)...
+
+// Now that we got a prediction for the next market move, we need to make use of this prediction and 
+// trade it. The returns then will show if everything works as predicted.
+// Over here is a simple long/short interpretation of the prediction, 
+// but of course one could also use the quality of the prediction (+5 or +1) in some sort of way,
+// ex. for position sizing.
+
+bool long  = prediction > 0 and filter
+bool short = prediction < 0 and filter
+bool clear = not(long and short)
+
+if array.get(bars, 0)==Bars    // stop by trade duration
+    signal := stype.CLEAR
+    array.set(bars, 0, 0)
+else
+    array.set(bars, 0, array.get(bars, 0) + 1)
+
+// assemble a signal
+signal :=  long  ? stype.BUY   : 
+           short ? stype.SELL  : 
+           Clear ? clear ? stype.CLEAR : nz(signal[1]) :
+           nz(signal[1])
+
+int  changed         = ta.change(signal)
+bool long_condition  = changed and signal==stype.BUY 
+bool short_condition = changed and signal==stype.SELL 
+bool clear_condition = changed and signal==stype.CLEAR 
+
+float maxpos = ta.highest(high, 10)
+float minpos = ta.lowest (low,  10)
+
+//-- Visuals
+
+plotshape(long_condition  ? minpos : na, 'Buy',      shape.labelup,   location.belowbar, color.new(aqua, int(prediction*5)), size=size.small)  // color intensity correction
+plotshape(short_condition ? maxpos : na, 'Sell',     shape.labeldown, location.abovebar, color.new(pink, int(-prediction*5)), size=size.small)
+plot(clear_condition      ? close  : na, 'ClearPos', color.yellow, 4, plot.style_cross)
+
+//-- Notification
+
+alertcondition(long_condition,  'Buy',  'Go long!')
+alertcondition(short_condition, 'Sell', 'Go short!') 
+alertcondition(long_condition or short_condition, 'Alert', 'Deal Time!')
+
+//-- Backtest
+

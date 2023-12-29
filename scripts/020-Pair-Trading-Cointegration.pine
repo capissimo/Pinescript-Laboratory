@@ -49,8 +49,8 @@ method getMA(float ds, simple int p, string ma) =>
        
 //-- Logic
 
-X = request.security(Asset1Symbol, '', close[barstate.isrealtime?1:0])
-Y = request.security(Asset2Symbol, '', close[barstate.isrealtime?1:0])
+float X = request.security(Asset1Symbol, '', close[barstate.isrealtime?1:0])
+float Y = request.security(Asset2Symbol, '', close[barstate.isrealtime?1:0])
 
 float ratio  = IsReversed ? math.log(Y) / math.log(X) : math.log(X) / math.log(Y)  
 float mean   = ratio.getMA(Period, Averaging)

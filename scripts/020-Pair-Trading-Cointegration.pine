@@ -66,9 +66,9 @@ bool shortCondition = bool(ta.change(signal)) and signal==SELL
 
 //-- Visuals
 
-plot(.0,     '', color.silver)
-plot(.2,     '', color.orange)
-plot(-.2,    '', color.orange)
+plot( 0.0,   '', color.silver)
+plot( 0.2,   '', color.orange)
+plot(-0.2,   '', color.orange)
 plot(BUY,    '', color.red)
 plot(SELL,   '', color.green)
 

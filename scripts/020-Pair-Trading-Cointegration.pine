@@ -34,7 +34,7 @@ int BUY = 1, int SELL = -1, int CLEAR = 0
 
 var int signal = CLEAR
 
-//-- Functions
+//-- Methods
 
 method getMA(float ds, simple int p, string ma) => 
     switch ma

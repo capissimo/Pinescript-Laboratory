@@ -18,15 +18,15 @@ indicator("Pair Trading - Cointegration", '', false, timeframe="", timeframe_gap
 
 //-- Inputs
 
-Asset1Symbol = input.symbol("NQ1!", "Asset #1", inline='a1')
-Asset2Symbol = input.symbol("ES",   "Asset #2", inline='a2')
-Asset1Period = input.int   (2,      "p:", 1, inline='a1')  
-Asset2Period = input.int   (4,      "p:", 2, inline='a2')  
-IsReversed   = input.bool (false,   "Reverse", inline='b')
+Asset1Symbol = input.symbol('NQ1!', 'Asset #1', inline='a1')
+Asset2Symbol = input.symbol('ES',   'Asset #2', inline='a2')
+Asset1Period = input.int   (2,      'p:', 1, inline='a1')  
+Asset2Period = input.int   (4,      'p:', 2, inline='a2')  
+IsReversed   = input.bool  (false,  'Reverse', inline='b')
 Averaging    = input.string('SMA',  'Ratio Averaging',   ['WMA','SMA','HMA','EMA','RMA','SWMA','VWAP','ALMA'], inline='m')
-Period       = input.int   (5,      '', 1, inline='m')
-Multiplier   = input.float (1.,     'Multiplier', minval=0.001, maxval=2.0, step=.1)
-Threshold    = input.float (0.0,    'Threshold',  minval=-1., maxval=1., step=.0001)
+Period       = input.int   (5,      'p:', 1, inline='m')
+Multiplier   = input.float (1.,     'Multiplier [0.01...2.0]', minval=0.01, maxval=2.0, step=0.01)
+Threshold    = input.float (0.0,    'Threshold [-1.0..1.0]',   minval=-1.0, maxval=1.0, step=.01)
 
 //-- Constants
 

@@ -48,7 +48,7 @@ TF    = input.timeframe('5',       'Resolution',                         ['1','3
 N     = input.int      (10,        '# of Data Points [2:n]',             2)
 K     = input.int      (100,       '# of Nearest Neighbors (K) [1:252]', 1, 252)
 ADJ   = input.bool     (true,      'Adjust Prediction',                  inline='b')
-REP   = input.bool     (false,     'Non-Repainting',                     inline='b')
+SIG   = input.bool     (false,     'Signals',                            inline='b')
 ADDON = input.string   ('Z-Score', 'Add-On',                             ['None','Pivot Point','Z-Score'])
 LAGP  = input.int      (5,         'Pivot Point Lag [2:n] if selected',  2)
 LAGZ  = input.int      (20,        'Z-Score Lag [2:n] if selected',      2)
@@ -62,8 +62,8 @@ var int signal = 0
 //-- Functions
 
 knn(data) =>  //-- calculate nearest neighbors (if any)
-    nearest_neighbors = array.new_float(0)
-    distances         = array.new_float(0)
+    float[] nearest_neighbors = array.new_float(0)
+    float[] distances         = array.new_float(0)
     
     for i = 0 to N-1
         float d = math.abs(data[i] - data[i+1])
@@ -87,27 +87,25 @@ predict(neighbors, data) =>  //-- predict the expected price and calculate next 
     int   direction  = prediction < data[ADJ?0:1] ? 1 : prediction > data[ADJ?0:1] ? -1 : 0
     [prediction, direction] 
 
-ordinary_color(dir) => dir
-    
 pivot_color(h,l, p, dir) =>
-    ph = ta.highestbars(h, LAGP)==0 ? h : na
-    pl = ta.lowestbars(l, LAGP)==0   ? l  : na
+    float ph = ta.highestbars(h, LAGP)==0 ? h : na
+    float pl = ta.lowestbars(l, LAGP)==0   ? l  : na
     ph and dir==1 ? 1 : pl and dir==-1 ? -1 : 0
 
 zscore_color(data, p, dir) =>
-    zs = (data - ta.sma(data, p)) / ta.stdev(data, p)  // standardize
+    float zs = (data - ta.sma(data, p)) / ta.stdev(data, p)  // standardize
     zs/(p/5)>0 and dir==1 ? 1 : zs/(p/5)<0 and dir==-1 ? -1 : 0
 
 //-- Logic
 
-rep        = REP?1:0
-[O,H,L,C]  = request.security('', TF, [open,high[rep],low[rep],close[rep]])
-nn         = knn(C)
+int rt     = barstate.isrealtime?1:0
+[O,H,L,C]  = request.security('', TF, [open,high[rt],low[rt],close[rt]])
+float[] nn = knn(C)
 [pred,dir] = predict(nn, C)
-signal        := ADDON=='Z-Score'?zscore_color(C, LAGZ, dir):ADDON=='Pivot Point'?pivot_color(H,L,LAGP, dir):ordinary_color(dir)
+signal    := ADDON=='Z-Score' ? zscore_color(C, LAGZ, dir) : ADDON=='Pivot Point' ? pivot_color(H,L,LAGP, dir) : dir
 color clr  = signal==1 ? color.green : signal==-1 ? color.red : na
 
-bool changed = bool(ta.change(signal))
+bool changed         = bool(ta.change(signal))
 bool long_condition  = changed and signal==1
 bool short_condition = changed and signal==-1
 bool clear_condition = changed and signal==0
@@ -117,10 +115,10 @@ bool clear_condition = changed and signal==0
 //plot(ta.sma(close,20))
 plot(DISP=='Curve'   or DISP=='Both' ? pred : na, 'kNN Curve',  clr, 3)
 plot(DISP=='Predict' or DISP=='Both' ? ODS  : na, 'Prediction', clr, 5, plot.style_circles, offset=2, show_last=1)
-plotshape(long_condition,  '', shape.labelup,   location.belowbar, color.green, 0, '', color.white, size=size.tiny)
-plotshape(short_condition, '', shape.labeldown, location.abovebar, color.red,   0, '', color.white, size=size.tiny)
-plotshape(clear_condition and signal[1]==1,  '', shape.xcross, location.abovebar, color.orange, 0, '', color.white, size=size.tiny)
-plotshape(clear_condition and signal[1]==-1, '', shape.xcross, location.belowbar, color.orange, 0, '', color.white, size=size.tiny)
+plotshape(SIG and long_condition,  '', shape.labelup,   location.belowbar, color.green, 0, '', color.white, size=size.tiny)
+plotshape(SIG and short_condition, '', shape.labeldown, location.abovebar, color.red,   0, '', color.white, size=size.tiny)
+plotshape(SIG and clear_condition and signal[1]==1,  '', shape.xcross, location.abovebar, color.orange, 0, '', color.white, size=size.tiny)
+plotshape(SIG and clear_condition and signal[1]==-1, '', shape.xcross, location.belowbar, color.orange, 0, '', color.white, size=size.tiny)
 
 //-- Notification
 

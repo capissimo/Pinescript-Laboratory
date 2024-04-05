@@ -1,0 +1,193 @@
+// This Pine Script™ code is subject to the terms of the Mozilla Public License 2.0 at https://mozilla.org/MPL/2.0/
+// © capissimo
+
+//@version=5 
+indicator('Machine Learning: Perceptron-Based Strategy [5]', 'ML: Perceptron [5]', true)
+import TradingView/ta/7
+
+// Perceptron-based strategy
+
+// Description: 
+
+// The Learning Perceptron is the simplest possible artificial neural network  
+// (ANN), consisting of just a single neuron and capable of learning a certain  
+// class of binary classification problems. The idea behind ANNs is that by
+// selecting good values for the weight parameters (and the bias), the ANN can 
+// model the relationships between the inputs and some target.
+
+// Generally, ANN neurons receive a number of inputs, weight each of those inputs, 
+// sum the weights, and then transform that sum using a special function called 
+// an activation function. The output of that activation function is then either 
+// used as the prediction (in a single neuron model) or is combined with the outputs 
+// of other neurons for further use in more complex models.
+
+// The purpose of the activation function is to take the input signal (that’s the 
+// weighted sum of the inputs and the bias) and turn it into an output signal. 
+// Think of this activation function as firing (activating) the neuron when it 
+// returns 1, and doing nothing when it returns 0. This sort of computation is 
+// accomplished with a function called step function: f(z) = {1 if z > 0 else 0}. 
+// This function then transforms any weighted sum of the inputs and converts it  
+// into a binary output (either 1 or 0). The trick to making this useful is finding 
+// (learning) a set of weights that lead to good predictions using this activation 
+// function.
+
+// Training our perceptron is simply a matter of initializing the weights to zero 
+// (or random value) and then implementing the perceptron learning rule, which 
+// just updates the weights based on the error of each observation with the current 
+// weights. This has the effect of moving the classifier’s decision boundary in the 
+// direction that would have helped it classify the last observation correctly. 
+// This is achieved via a for loop which iterates over each observation, making a 
+// prediction of each observation, calculating the error of that prediction and then 
+// updating the weights accordingly. In this way, weights are gradually updated 
+// until they converge. Each sweep through the training data is called an epoch.
+
+// In this script the perceptron is retrained on each new bar trying to classify  
+// this bar by drawing the moving average curve above or below the bar.
+
+// This script was tested with BTCUSD and USDJPY, and EURUSD.
+
+// Note: The script features a custom directional movement index (DMI) and 
+// trailing stops. DMI indication nearing 100 and 0 points indicates strong 
+// upward and downward trends.
+
+// Asset class: ALL 
+
+//-- Inputs
+
+Dataset    = input.source   (hl2,         'Dataset',        inline='ds')
+Timeframe  = input.timeframe('1',         '',               inline='ds') 
+Period     = input.int      (14,          'Period', 2)  
+Depth      = input.int      (12,          'Sample Size', 5)  
+Threshold  =  input.int     (28,          'Threshold [0..100]', 0, 100)  
+Filter     = input.string   ('Volatility','Filter',         ['Volatility','Volume','Both','None'])
+Holding    = input.int      (5,           'Holding Period', 1, tooltip='Set to 100+ to remove all the stops')
+Smooth     = input.bool     (false,       'Smoothed',       inline='b')
+Perceptron = input.bool     (true,        'Perceptron MA',  inline='b')
+Ma         = input.bool     (false,       'SMA',            inline='b')
+Barcolor   = input.bool     (true,        'Bar Color',      inline='b2')
+Trailing   = input.bool     (false,       'Trailing',       inline='b2')
+Info       = input.bool     (true,        'Info',           inline='b2')
+
+//-- Data
+
+[O, H, L, C, dataset, V] = request.security('', Timeframe, [open,high,low,close,Dataset,volume])
+
+//-- Constants  
+
+int BUY = 1, int SELL = -1, int HOLD = 0
+
+//-- Variables
+
+var float weight     = math.random(0.0,0.1) 
+var float bias       = math.random(0.0,0.1)
+var float errors     = math.random(0.0,0.1) 
+
+var int   signal     = HOLD
+var int   hp_counter = 0     // holding period counter
+
+var label lb  = label.new(na, na, '', xloc.bar_index, yloc.price, color.black, label.style_label_left, 
+                         color.white, size.normal, text.align_left, '', font.family_monospace)
+var line  ln  = line.new(na, na, na, na, xloc.bar_index, extend.none, color.black)
+
+//-- Functions
+
+method rma(float x, int p) => ta.rma(x, p) 
+method ema(float x, int p) => ta.ema(x, p) 
+method linreg(float x, int p, int s=0) => ta.linreg(x, p, s) 
+method mg(float x, simple int p=5) =>  // mcginley ma
+    float mg = 0.0
+    mg := na(mg[1]) ? x.ema(p) : mg[1] + (x - mg[1]) / (p * math.pow(x/mg[1], 4))
+
+method dmi(float h, float l, float c, int p=20) =>  // custom directional movement index using differencing and norming
+	float up    = ta.change(h)
+	float down  =-ta.change(l)
+    float tr    = math.max(h-l, math.abs(h-nz(c[1])), math.abs(l-nz(c[1])))
+	float atr   = ta.rma(tr, p)
+	float plus  = fixnan(100 * (up>down and up>0 ? up : 0).rma(p) / atr)  
+	float minus = fixnan(100 * (down>up and down>0 ? down : 0).rma(p) / atr)
+    float diff  = plus - minus  
+    100 *  (diff - ta.lowest(diff, p)) / (ta.highest(diff, p)-ta.lowest(diff, p))  // norm
+ 
+volumeBreak(float v, float thres) => ta.hma(ta.rsi(v, Period), 10) > thres                     
+
+volatilityBreak(simple int volmin, simple int volmax) => ta.atr(volmin) > ta.atr(volmax)
+
+step(float output) => output >= 0 ? -1 : 1  
+
+method minimax(float x, float min, float max, int p=0) => 
+    float hi = p==0 ? ta.max(x) : ta.highest(x, p)
+    float lo = p==0 ? ta.min(x) : ta.lowest(x, p)
+    (max - min) * (x - lo)/(hi - lo) + min
+
+//-- Logic
+
+float dmi          = dmi(H,L,C, Period)  
+float trail        = C.linreg(8).mg(6)
+float ma           = ta.sma(dataset, Period)
+
+bool filter = switch Filter
+    'Volatility' => volatilityBreak(1, 10) 
+    'Volume'     => volumeBreak(V, 49) 
+    'Both'       => volatilityBreak(1, 10) and volumeBreak(V, 49)
+    => true
+
+// Each chart repaint is a sweep through the data sample to train perceptron 
+
+// Training loop 
+for i=1 to Depth                       // iterate over the dataset to the specified depth
+    float point      = math.log(C[i])  // and look into all but the latest data points
+    float hypothesis = weight * point + bias  
+    float error      = point - step(hypothesis)   
+    weight := error * point            // learning rule
+    bias   := error
+
+float output  = weight * math.log(C[0]) + bias  // now produce the output for the 
+float predict = step(output)                    // latest data point and classify it
+errors       := output - predict
+
+float err_normed = minimax(errors, ta.lowest(C, Period), ta.highest(C, Period))  // norm to price
+float outcome    = Smooth ? math.sum(err_normed, 2) / 2 : err_normed
+
+//-- Signals
+
+bool long  = C > outcome  and filter  //and dmi > 100 - Threshold
+bool short = C < outcome  and filter  //and dmi < Threshold       
+signal := long ? BUY : short ? SELL : nz(signal)
+
+bool changed = bool(ta.change(signal))
+
+hp_counter := changed ? 0 : hp_counter + 1
+
+bool long_condition  = changed and signal==BUY    
+bool short_condition = changed and signal==SELL   
+bool end_long_cond   = signal==BUY  and hp_counter==Holding and not changed 
+bool end_short_cond  = signal==SELL and hp_counter==Holding and not changed 
+
+//--Visuals
+
+barcolor(Barcolor ? signal==BUY?color.teal:color.red : na)
+plot(Perceptron ? outcome : na, 'Perceptron', color.blue, 2)
+plot(Ma         ? ma      : na, 'Ma',         color.gray, 1) 
+plot(Trailing ? trail  : na, 'Trailing',   color.black, 1, plot.style_stepline)
+plotshape(long_condition,  'Buy',  shape.labelup,   location.belowbar, na, 0, '🡅', color.teal, false, size.small)
+plotshape(short_condition, 'Sell', shape.labeldown, location.abovebar, na, 0, '🡇', color.red, false, size.small)
+plot(end_long_cond  ? H : na, 'StopBuy',  color.black, 3, plot.style_cross)
+plot(end_short_cond ? L : na, 'StopSell', color.black, 3, plot.style_cross)
+line.set_xy1(ln, bar_index, trail)
+line.set_xy2(ln, bar_index+3, trail)
+
+//-- Notification
+
+alertcondition(long_condition,  "Buy Alert",  "Possible Long Trade")
+alertcondition(short_condition, "Sell Alert", "Possible Short Trade") 
+alertcondition(long_condition or short_condition, 'Reversal!', 'Time to ACT')
+
+//-- Information
+
+string info = 'DMI: ' + str.tostring(dmi, '#')
+
+if Info and barstate.islast  
+    label.set_xy(lb, bar_index+10, open)
+    label.set_text(lb, info)
+
+//-- Backtest

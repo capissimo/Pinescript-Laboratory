@@ -1,0 +1,185 @@
+// This Pine Script™ code is subject to the terms of the Mozilla Public License 2.0 at https://mozilla.org/MPL/2.0/
+// © capissimo
+
+//@version=5 
+strategy('Machine Learning: Perceptron-Based Strategy [5] (v.3)', 'ML: Perceptron [5] (v.3)', true, 
+         initial_capital=1000, pyramiding=0, margin_long=10, margin_short=10, process_orders_on_close=true, slippage=0, 
+         default_qty_type=strategy.percent_of_equity, default_qty_value=75)  // default_qty_type=strategy.percent_of_equity, default_qty_value=75
+import TradingView/ta/7
+
+// Perceptron-based strategy FROM SCRATCH
+
+// Description: 
+
+// This strategy is based on my implementation of Perceptron algorithm. You can find a full description of it here:
+// https://www.tradingview.com/script/7EHWtnXY-Machine-Learning-Perceptron-based-strategy/.
+
+// This strategy features a very basic benchmarking routine, enabled with Backtest checkbox in the Settings menu, 
+// to compare performance of different settings. The backtest showcases some basic statistics, such as 
+// net profit, profitability, profit factor (the main statistic), and max drawdown in Strategy Tester window.
+// Strategy with a profit factor of 1.75 or above is treated as acceptable. In addition, the ratio of 
+// max drawdown to net profit tells of reliability of the strategy signals. Strategy with the ratio of 
+// 0.10 or less is considered acceptable. Besides, Trail checkbox allows to employ trailing to execute stops 
+// when price crosses the running trail (fixed in code), thereby effectively protecting from drawdowns.
+
+// However, note that benchmarking signals are in no way recommended for actual trading. Taking actions 
+// on these signals shall be deemed as at your own risk should you decide to do otherwise. 
+
+// Feel free to customise the settings as per your needs. Below are some examples:
+
+// Note: The script features a custom directional movement index (DMI) and 
+// trailing stops. DMI indication nearing 100 and 0 points indicates strong 
+// upward and downward trends.
+
+// Asset class: ALL 
+
+//-- Inputs
+
+StartDate  = input.time (timestamp('01 Dec 2023 00:00:00'), 'Start Date')
+StopDate   = input.time (timestamp('31 Dec 2025 23:45:00'), 'Stop Date')
+Timeframe  = input.timeframe('1',         'Time Frame') 
+Depth      = input.int      (500,         'Sample Size', 5)  
+Period     = input.int      (14,          'Period', 2)  
+Threshold  = input.int      (28,          'Threshold [0..100]', 0, 100)  
+Fltr        = input.bool     (true,        '',              inline='flt')
+Filter     = input.string   ('Volatility','Filter',         ['Volatility','Volume','Both','None'], inline='flt')
+Holding    = input.int      (10,          'Holding Period', 1, tooltip='Set to 100+ to remove all the stops')
+Ma         = input.bool     (false,       'Ma',             inline='b')
+Barcolor   = input.bool     (true,        'Bar Color',      inline='b')
+Trailing   = input.bool     (false,       'Trailing',       inline='b')
+Info       = input.bool     (true,        'Info',           inline='b')
+Backtest   = input.bool     (false,       'Backtest',       inline='b')
+
+//-- Data
+
+[Open, High, Low, Close, Volume, Time] = request.security('', Timeframe, [open, high, low, close, volume, time])
+
+//-- Constants  
+
+int BUY = 1, int SELL = -1, int HOLD = 0
+int epochs = 5
+
+//-- Variables
+
+var float source     = 0
+var float weight1    = 0.0   // perceptron initial weights
+var float weight2    = 0.0
+var float bias       = 0.0
+var float errors     = 0.0
+var int   signal     = HOLD
+var int   hp_counter = 0     // holding period counter
+var int   timebuy    = 0
+var int   timesell   = 0
+
+var label lb  = label.new(na, na, '', xloc.bar_index, yloc.price, color.black, label.style_label_left, 
+                         color.white, size.normal, text.align_left, '', font.family_monospace)
+var line  ln  = line.new(na, na, na, na, xloc.bar_index, extend.none, color.black)
+
+//-- Functions
+
+method rma(float x, int p) => ta.rma(x, p) 
+method ema(float x, int p) => ta.ema(x, p) 
+method linreg(float x, int p, int s=0) => ta.linreg(x, p, s) 
+method mg(float x, simple int p=5) =>  // mcginley ma
+    float mg = 0.0
+    mg := na(mg[1]) ? x.ema(p) : mg[1] + (x - mg[1]) / (p * math.pow(x/mg[1], 4))
+
+method dmi(float h, float l, float c, int p=20) =>  // custom directional movement index using differencing and norming
+	float up    = ta.change(h)
+	float down  =-ta.change(l)
+    float tr    = math.max(h-l, math.abs(h-nz(c[1])), math.abs(l-nz(c[1])))
+	float atr   = ta.rma(tr, p)
+	float plus  = fixnan(100 * (up>down and up>0 ? up : 0).rma(p) / atr)  
+	float minus = fixnan(100 * (down>up and down>0 ? down : 0).rma(p) / atr)
+    float diff  = plus - minus  
+    100 *  (diff - ta.lowest(diff, p)) / (ta.highest(diff, p)-ta.lowest(diff, p))  // norm
+ 
+volumeBreak(float v, float thres) => ta.hma(ta.rsi(v, Period), 10) > thres                     
+
+volatilityBreak(simple int volmin, simple int volmax) => ta.atr(volmin) > ta.atr(volmax)
+
+//-- Logic
+
+bool window  = Time >= StartDate and Time <= StopDate ? true : false
+float dmi    = dmi(High, Low, Close, Period)  
+float trail  = Close.linreg(8).mg(6)
+float ma     = ta.sma(Close, Period)
+
+bool filter = switch Filter
+    'Volatility' => volatilityBreak(1, 10) 
+    'Volume'     => volumeBreak(Volume, 49) 
+    'Both'       => volatilityBreak(1, 10) and volumeBreak(Volume, 49)
+    => true
+
+source := Close[0]>Close[1] ? 1 : -1    // transform data to binary classification problem 
+
+// Training loop (perceptron learning)
+for j=1 to epochs
+    for i=2 to Depth                                                        // iterate over the dataset to the specified depth
+        yhat = weight1*source[i] + weight2*source[i-1] + bias > 0 ? 1 : -1  // and look into all but the latest data points
+        error = source[i] - yhat       // will be either 0, 2 or -2
+        weight1 := error*source[i]     // learning rules
+        weight2 := error*source[i-1]
+        bias := error  
+    for k=2 to Depth
+        preds = weight1*source[k] + weight2*source[k-1] + bias > 0 ? 1 : -1   // TODO: predict on whole training set
+        errors := ta.cum(math.abs(source - preds))/2                          // calculate errors
+
+float slope     = weight1/weight2   // alpha
+float intercept = bias/weight2      // beta
+float outcome   = intercept * source + slope   // now produce the output for the latest data point and classify it
+
+//-- Signals
+
+bool long  = outcome > 0 and dmi > 100 - Threshold and timebuy  != time_close and (Fltr ? filter : true)
+bool short = outcome < 0 and dmi < Threshold       and timesell != time_close and (Fltr ? filter : true)    
+bool clear = hp_counter==Holding 
+
+signal := long ? BUY : short ? SELL : nz(signal)
+
+bool changed = bool(ta.change(signal))
+
+hp_counter := changed ? 0 : hp_counter + 1
+
+bool long_condition  = changed and signal==BUY    
+bool short_condition = changed and signal==SELL   
+bool end_long_cond   = signal==BUY  and hp_counter==Holding and not changed 
+bool end_short_cond  = signal==SELL and hp_counter==Holding and not changed 
+
+//--Visuals
+
+barcolor(Barcolor ? signal==BUY?color.teal:color.red : na)
+// plot(Perceptron ? outcome : na, 'Perceptron', color.blue, 2)
+plot(Ma         ? ma      : na, 'Ma',         signal==BUY?color.teal:color.red, 2) 
+plot(Trailing ? trail  : na, 'Trailing',   color.black, 1, plot.style_stepline)
+plotshape(long_condition,  'Buy',  shape.labelup,   location.belowbar, na, 0, '🡅', color.teal, false, size.small)
+plotshape(short_condition, 'Sell', shape.labeldown, location.abovebar, na, 0, '🡇', color.red, false, size.small)
+plot(end_long_cond  ? High : na, 'StopBuy',  color.black, 3, plot.style_cross)
+plot(end_short_cond ? Low  : na, 'StopSell', color.black, 3, plot.style_cross)
+line.set_xy1(ln, bar_index, trail)
+line.set_xy2(ln, bar_index+3, trail)
+
+if Info
+    label.set_xy(lb, bar_index+10, open)
+    label.set_text(lb, 'DMI: ' + str.tostring(dmi, '#') + '\nerrors: ' + str.tostring(errors, '#.##'))
+
+//-- Notification
+
+// alertcondition(long_condition,  "Buy Alert",  "Possible Long Trade")
+// alertcondition(short_condition, "Sell Alert", "Possible Short Trade") 
+// alertcondition(long_condition or short_condition, 'Reversal!', 'Time to ACT')
+
+//-- Backtest
+
+if Backtest and window
+    if long   
+        timebuy := time_close
+        strategy.entry("Long", strategy.long)   
+        strategy.close("Short")
+    if short   
+        timesell := time_close
+        strategy.entry("Short", strategy.short)  
+        strategy.close("Long") 
+    if clear //and Clear
+        timesell := time_close
+        strategy.close_all() 
